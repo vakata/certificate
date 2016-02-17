@@ -71,17 +71,22 @@ class BG
             case '1.3.6.1.4.1.11290':
                 $this->issuer = static::STAMPIT;
                 switch ($certyp) {
-                    case '1.1.1.1': // doc pro
+                    case '1.1.1.1':
+                        // doc pro
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '1.1.1.2': // server
+                    case '1.1.1.2':
+                        // server
                         break;
-                    case '1.1.1.3': // object
+                    case '1.1.1.3':
+                        // object
                         break;
-                    case '1.1.1.4': // enterprise
+                    case '1.1.1.4':
+                        // enterprise
                         $this->type = static::NONQUALIFIED;
                         break;
-                    case '1.1.1.5': // doc
+                    case '1.1.1.5':
+                        // doc
                         $this->type = static::PERSONAL;
                         break;
                     default:
@@ -94,8 +99,13 @@ class BG
             case '1.3.6.1.4.1.15862':
                 $this->issuer = static::BTRUST;
                 switch ($certyp) {
-                    case '1.5.1.1': // personal and professional in one
-                        $parsed = $this->parseSubject($temp['subject'], ['ST', 'OU'], ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']);
+                    case '1.5.1.1':
+                        // personal and professional in one
+                        $parsed = $this->parseSubject(
+                            $temp['subject'],
+                            ['ST', 'OU'],
+                            ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']
+                        );
                         $this->type = isset($parsed['bulstat']) ? static::PROFESSIONAL : static::PERSONAL;
                         break;
                     default:
@@ -116,12 +126,14 @@ class BG
                     $parsed[$isForeign ? 'pid' : 'egn'] = $egn[1];
                 }
                 switch ($certyp) {
-                    case '1.1.1.1': // personal
-                    case '1.1.1.3': // personal enforced CP
+                    case '1.1.1.1':
+                    case '1.1.1.3':
+                        // personal & personal enforced CP
                         $this->type = static::PERSONAL;
                         break;
-                    case '1.1.2.1': // professional
-                    case '1.1.2.3': // professional enforced CP
+                    case '1.1.2.1':
+                    case '1.1.2.3':
+                        // professional & professional enforced CP
                         $this->type = static::PROFESSIONAL;
                         if (!isset($temp['name'])) {
                             throw new Exception('Unsupported certificate');
@@ -145,28 +157,36 @@ class BG
                     $parsed[strlen($egn[1]) === 10 ? 'egn' : 'pid'] = $egn[1];
                 }
                 switch ($certyp) {
-                    case '1.1.1': // private
+                    case '1.1.1':
+                        // private
                         $this->type = static::PERSONAL;
                         break;
-                    case '2.5.1': // private
+                    case '2.5.1':
+                        // private
                         $this->type = static::PERSONAL;
                         break;
-                    case '2.5.2': // organization
+                    case '2.5.2':
+                        // organization
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.5.3': // profession
+                    case '2.5.3':
+                        // profession
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.1.1': // personal
+                    case '2.1.1':
+                        // personal
                         $this->type = static::PERSONAL;
                         break;
-                    case '2.1.2': // organization
+                    case '2.1.2':
+                        // organization
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.1.3': // profession
+                    case '2.1.3':
+                        // profession
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.1.4': // server
+                    case '2.1.4':
+                        // server
                         break;
                     default:
                         throw new Exception('Unsupported certificate type');
@@ -187,17 +207,23 @@ class BG
             case '1.3.6.1.4.1.18463':
                 $this->issuer = static::SPEKTAR;
                 switch ($certyp) {
-                    case '1.1.1.1': // personal universal
-                    case '1.1.1.2': // personal universal restricted
-                    case '1.1.1.5': // qualified personal
+                    case '1.1.1.1':
+                    case '1.1.1.2':
+                    case '1.1.1.5':
+                        // personal universal & personal universal restricted & qualified personal
                         $this->type = static::PERSONAL;
                         $parsed = $this->parseSubject($temp['subject'], ['OU'], ['EGNT'=>'egn', 'PID'=>'pid']);
                         break;
-                    case '1.1.1.3': // org universal
-                    case '1.1.1.4': // org universal restricted
-                    case '1.1.1.6': // qualified org
+                    case '1.1.1.3':
+                    case '1.1.1.4':
+                    case '1.1.1.6':
+                        // org universal & org universal restricted & qualified org
                         $this->type = static::PROFESSIONAL;
-                        $parsed = $this->parseSubject($temp['subject'], ['OU', 'title'], ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']);
+                        $parsed = $this->parseSubject(
+                            $temp['subject'],
+                            ['OU', 'title'],
+                            ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
+                        );
                         break;
                     default:
                         throw new Exception('Unsupported certificate type');
