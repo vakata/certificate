@@ -38,17 +38,17 @@ class BG
     public function __construct($cert)
     {
         if (!is_callable('openssl_x509_parse')) {
-            throw new Exception('OpenSSL not available');
+            throw new CertificateException('OpenSSL not available');
         }
         $temp = openssl_x509_parse($cert, true);
         if ($temp === false || !is_array($temp)) {
-            throw new Exception('Error parsing certificate');
+            throw new CertificateException('Error parsing certificate');
         }
         if (!isset($temp['subject']) || !isset($temp['issuer']) || !isset($temp['extensions'])) {
-            throw new Exception('Invalid certificate');
+            throw new CertificateException('Invalid certificate');
         }
         if (!isset($temp['extensions']) || !isset($temp['extensions']['certificatePolicies'])) {
-            throw new Exception('Missing certificate policies');
+            throw new CertificateException('Missing certificate policies');
         }
         $matches = [];
         if (!preg_match(
@@ -56,7 +56,7 @@ class BG
             serialize($temp['extensions']),
             $matches
         )) {
-            throw new Exception('Unsupported certificate');
+            throw new CertificateException('Unsupported certificate');
         }
         $issuer = $matches[1];
         $certyp = $matches[2];
@@ -90,7 +90,7 @@ class BG
                         $this->type = static::PERSONAL;
                         break;
                     default:
-                        throw new Exception('Unsupported certificate type');
+                        throw new CertificateException('Unsupported certificate type');
                 }
                 if (isset($temp['subject']['ST']) && $this->type !== static::OTHER) {
                     $parsed = $this->parseSubject(
@@ -113,13 +113,13 @@ class BG
                         $this->type = isset($parsed['bulstat']) ? static::PROFESSIONAL : static::PERSONAL;
                         break;
                     default:
-                        throw new Exception('Unsupported certificate type');
+                        throw new CertificateException('Unsupported certificate type');
                 }
                 break;
             case '1.3.6.1.4.1.22144':
                 $this->issuer = static::INFONOTARY;
                 if (!isset($temp['extensions']['subjectAltName'])) {
-                    throw new Exception('Unsupported certificate');
+                    throw new CertificateException('Unsupported certificate');
                 }
                 $isForeign = strpos($temp['extensions']['subjectAltName'], 'countryOfCitizenship') !== false;
                 if (preg_match('(countryOfCitizenship\s*=\s*BG\b)i', $temp['extensions']['subjectAltName'])) {
@@ -140,7 +140,7 @@ class BG
                         // professional & professional enforced CP
                         $this->type = static::PROFESSIONAL;
                         if (!isset($temp['name'])) {
-                            throw new Exception('Unsupported certificate');
+                            throw new CertificateException('Unsupported certificate');
                         }
                         $bulstat = [];
                         if (preg_match('(2\.5\.4\.10\.100\.1\.1\s*=\s*(\d+)\b)i', $temp['name'], $bulstat)) {
@@ -148,13 +148,13 @@ class BG
                         }
                         break;
                     default:
-                        throw new Exception('Unsupported certificate type');
+                        throw new CertificateException('Unsupported certificate type');
                 }
                 break;
             case '1.3.6.1.4.1.30299':
                 $this->issuer = static::SEP;
                 if (!isset($temp['subject']['UID'])) {
-                    throw new Exception('Unsupported certificate');
+                    throw new CertificateException('Unsupported certificate');
                 }
                 $egn = explode('EGN', $temp['subject']['UID'], 2);
                 if (count($egn) === 2) {
@@ -193,7 +193,7 @@ class BG
                         // server
                         break;
                     default:
-                        throw new Exception('Unsupported certificate type');
+                        throw new CertificateException('Unsupported certificate type');
                 }
                 if ($this->type === static::PROFESSIONAL) {
                     if (isset($temp['subject']['OU'])) {
@@ -230,11 +230,11 @@ class BG
                         );
                         break;
                     default:
-                        throw new Exception('Unsupported certificate type');
+                        throw new CertificateException('Unsupported certificate type');
                 }
                 break;
             default:
-                throw new Exception('Unsupported certificate');
+                throw new CertificateException('Unsupported certificate');
         }
         $this->cert = $temp;
         $this->parsed = $parsed;
@@ -243,6 +243,7 @@ class BG
      * Create an instance from the client request certificate.
      * @method fromRequest
      * @return vakata\certificate\BG      the certificate instance
+     * @codeCoverageIgnore
      */
     public static function fromRequest()
     {
@@ -343,7 +344,7 @@ class BG
      */
     public function isPersonal()
     {
-        return $this->type = static::PERSONAL;
+        return $this->type === static::PERSONAL;
     }
     /**
      * Is the certificate professional.
@@ -352,7 +353,7 @@ class BG
      */
     public function isProfessional()
     {
-        return $this->type = static::PROFESSIONAL;
+        return $this->type === static::PROFESSIONAL;
     }
     /**
      * Get the BULSTAT number (if the certificate is a professional one)
