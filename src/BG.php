@@ -93,7 +93,11 @@ class BG
                         throw new Exception('Unsupported certificate type');
                 }
                 if (isset($temp['subject']['ST']) && $this->type !== static::OTHER) {
-                    $parsed = $this->parseSubject($temp['subject'], ['ST'], ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']);
+                    $parsed = $this->parseSubject(
+                        $temp['subject'],
+                        ['ST'],
+                        ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
+                    );
                 }
                 break;
             case '1.3.6.1.4.1.15862':
