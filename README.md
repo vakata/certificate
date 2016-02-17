@@ -28,7 +28,7 @@ if ($cert->isPersonal()) {
     echo $cert->getID(); // EGN or PID
 }
 if ($cert->isProfessional()) {
-    echo $cert->getBulstat(); // EGN or PID
+    echo $cert->getBulstat(); // BULSTAT
 }
 
 // you can also create an instance from a x509 string
