@@ -19,6 +19,8 @@
 |[getEGN](#vakata\certificate\bggetegn)|Get the EGN - if available.|
 |[getPID](#vakata\certificate\bggetpid)|Get the personal identification number - if available.|
 |[getID](#vakata\certificate\bggetid)|Get the EGN or PID (whichever is available) - one will always be available in personal certificates.|
+|[getSubjectName](#vakata\certificate\bggetsubjectname)|Get the name of the subject.|
+|[getSubjectEmail](#vakata\certificate\bggetsubjectemail)|Get the email of the subject.|
 
 ---
 
@@ -248,6 +250,38 @@ public function getID () : string, null
 |-----|-----|-----|
 |  |  |  |
 | `return` | `string`, `null` | the EGN or PID number |
+
+---
+
+
+### vakata\certificate\BG::getSubjectName
+Get the name of the subject.  
+
+
+```php
+public function getSubjectName () : string    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
+|  |  |  |
+| `return` | `string` | the subject's name |
+
+---
+
+
+### vakata\certificate\BG::getSubjectEmail
+Get the email of the subject.  
+
+
+```php
+public function getSubjectEmail () : string, null    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
+|  |  |  |
+| `return` | `string`, `null` | the subject's email |
 
 ---
 
