@@ -409,4 +409,13 @@ class BG
     {
         return isset($this->cert['subject']['emailAddress']) ? $this->cert['subject']['emailAddress'] : null;
     }
+    /**
+     * Get the organization name (available if the certificate is a professional one).
+     * @method getSubjectOrganization
+     * @return string|null the subject's organization
+     */
+    public function getSubjectOrganization()
+    {
+        return isset($this->cert['subject']['O']) ? $this->cert['subject']['O'] : null;
+    }
 }
