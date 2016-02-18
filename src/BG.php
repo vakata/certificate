@@ -391,4 +391,22 @@ class BG
     {
         return $this->parsed['egn'] ?: $this->parsed['pid'];
     }
+    /**
+     * Get the name of the subject.
+     * @method getSubjectName
+     * @return string the subject's name
+     */
+    public function getSubjectName()
+    {
+        return $this->cert['subject']['CN'];
+    }
+    /**
+     * Get the email of the subject.
+     * @method getSubjectEmail
+     * @return string|null the subject's email
+     */
+    public function getSubjectEmail()
+    {
+        return isset($this->cert['subject']['emailAddress']) ? $this->cert['subject']['emailAddress'] : null;
+    }
 }

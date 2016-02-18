@@ -11,6 +11,9 @@ class BGTest extends \PHPUnit_Framework_TestCase
 		$this->assertEquals('1111111110', $cer->getEGN());
 		$this->assertEquals(null, $cer->getPID());
 		$this->assertEquals('1111111110', $cer->getID());
+		$this->assertEquals('Ivan Georgiev Bozhanov', $cer->getSubjectName());
+		$this->assertEquals('ivan@vakata.com', $cer->getSubjectEmail());
+		$this->assertEquals('1111111110', $cer->getID());
 		$this->assertEquals(null, $cer->getBulstat());
 		$this->assertEquals(true, is_array($cer->getData()));
 		$this->assertEquals(true, is_array($cer->getSubjectData()));
