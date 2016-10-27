@@ -2,6 +2,10 @@
 
 namespace vakata\certificate;
 
+// EVROTRUST
+// natural: 1.3.6.1.4.1.47272.2.2
+// legal: 1.3.6.1.4.1.47272.2.3
+
 class BG
 {
     /** @var Issuer StampIT */
@@ -32,7 +36,6 @@ class BG
 
     /**
      * Create an instance.
-     * @method __construct
      * @param  string      $cert the certificate to parse
      */
     public function __construct($cert)
@@ -241,7 +244,6 @@ class BG
     }
     /**
      * Create an instance from the client request certificate.
-     * @method fromRequest
      * @return vakata\certificate\BG      the certificate instance
      * @codeCoverageIgnore
      */
@@ -251,7 +253,6 @@ class BG
     }
     /**
      * Create an instance from a file.
-     * @method fromFile
      * @param  string   $file the path to the certificate file to parse
      * @return vakata\certificate\BG      the certificate instance
      */
@@ -294,7 +295,6 @@ class BG
 
     /**
      * Get the full certificate data (as returned from x509_parse).
-     * @method getData
      * @return array  the certificate data
      */
     public function getData()
@@ -303,7 +303,6 @@ class BG
     }
     /**
      * Get the subject data from the certificate (as returned from x509_parse).
-     * @method getSubjectData
      * @return array  the certificate subject data
      */
     public function getSubjectData()
@@ -312,7 +311,6 @@ class BG
     }
     /**
      * Get the issuer data from the certificate (as returned from x509_parse).
-     * @method getSubjectData
      * @return array  the certificate subject data
      */
     public function getIssuerData()
@@ -321,7 +319,6 @@ class BG
     }
     /**
      * Get the issuer of the certificate - one of the issuer constants.
-     * @method getIssuer
      * @return int    the issuer constant
      */
     public function getIssuer()
@@ -330,7 +327,6 @@ class BG
     }
     /**
      * Get the certificate type - one of the type constants.
-     * @method getType
      * @return int  the type constant
      */
     public function getType()
@@ -339,7 +335,6 @@ class BG
     }
     /**
      * Is the certificate personal.
-     * @method isPersonal
      * @return boolean
      */
     public function isPersonal()
@@ -348,7 +343,6 @@ class BG
     }
     /**
      * Is the certificate professional.
-     * @method isProfessional
      * @return boolean
      */
     public function isProfessional()
@@ -357,7 +351,6 @@ class BG
     }
     /**
      * Get the BULSTAT number (if the certificate is a professional one)
-     * @method getBulstat
      * @return string|null   the BULSTAT number
      */
     public function getBulstat()
@@ -366,7 +359,6 @@ class BG
     }
     /**
      * Get the EGN - if available.
-     * @method getEGN
      * @return string|null the EGN
      */
     public function getEGN()
@@ -375,7 +367,6 @@ class BG
     }
     /**
      * Get the personal identification number - if available.
-     * @method getPID
      * @return string|null the PID
      */
     public function getPID()
@@ -384,7 +375,6 @@ class BG
     }
     /**
      * Get the EGN or PID (whichever is available) - one will always be available in personal certificates.
-     * @method getID
      * @return string|null the EGN or PID number
      */
     public function getID()
@@ -393,7 +383,6 @@ class BG
     }
     /**
      * Get the name of the subject.
-     * @method getSubjectName
      * @return string the subject's name
      */
     public function getSubjectName()
@@ -402,7 +391,6 @@ class BG
     }
     /**
      * Get the email of the subject.
-     * @method getSubjectEmail
      * @return string|null the subject's email
      */
     public function getSubjectEmail()
@@ -411,7 +399,6 @@ class BG
     }
     /**
      * Get the organization name (available if the certificate is a professional one).
-     * @method getSubjectOrganization
      * @return string|null the subject's organization
      */
     public function getSubjectOrganization()
