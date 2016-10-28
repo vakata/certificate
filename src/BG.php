@@ -244,7 +244,7 @@ class BG
     }
     /**
      * Create an instance from the client request certificate.
-     * @return vakata\certificate\BG      the certificate instance
+     * @return \vakata\certificate\BG      the certificate instance
      * @codeCoverageIgnore
      */
     public static function fromRequest()
@@ -254,7 +254,7 @@ class BG
     /**
      * Create an instance from a file.
      * @param  string   $file the path to the certificate file to parse
-     * @return vakata\certificate\BG      the certificate instance
+     * @return \vakata\certificate\BG      the certificate instance
      */
     public static function fromFile($file)
     {
