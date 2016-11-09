@@ -2,37 +2,34 @@
 
 namespace vakata\certificate;
 
-// EVROTRUST
-// natural: 1.3.6.1.4.1.47272.2.2
-// legal: 1.3.6.1.4.1.47272.2.3
-
 class BG
 {
-    /** @var Issuer StampIT */
-    const STAMPIT = 1;
-    /** @var Issuer B-Trust */
-    const BTRUST = 2;
-    /** @var Issuer Info Notary */
-    const INFONOTARY = 3;
-    /** @var Issuer SEP */
-    const SEP = 4;
-    /** @var Issuer Spektar */
-    const SPEKTAR = 5;
+    /** @var unknown */
+    const UNKNOWN       = 0;
 
-    /** @var Type Personal */
-    const PERSONAL = 6;
-    /** @var Type Professional */
-    const PROFESSIONAL = 7;
-    /** @var Type Other */
-    const OTHER = 8;
-    /** @var Type Non-qualified */
-    const NONQUALIFIED = 9;
+    /** @var issuer StampIT */
+    const STAMPIT       = '1.3.6.1.4.1.11290';
+    /** @var issuer B-Trust */
+    const BTRUST        = '1.3.6.1.4.1.15862';
+    /** @var issuer Info Notary */
+    const INFONOTARY    = '1.3.6.1.4.1.22144';
+    /** @var issuer SEP */
+    const SEP           = '1.3.6.1.4.1.30299';
+    /** @var issuer Spektar */
+    const SPEKTAR       = '1.3.6.1.4.1.18463';
+    /** @var issuer EvroTrust */
+    const EVROTRUST     = '1.3.6.1.4.1.47272';
 
-    protected $cert = null;
-    protected $data = null;
-    protected $parsed = null;
-    protected $issuer = 0;
-    protected $type = 0;
+    /** @var type Personal */
+    const PERSONAL      = 1;
+    /** @var type Professional */
+    const PROFESSIONAL  = 2;
+
+    protected $cert;
+    protected $data;
+    protected $type;
+    protected $issuer;
+    protected $profile;
 
     /**
      * Create an instance.
@@ -43,204 +40,205 @@ class BG
         if (!is_callable('openssl_x509_parse')) {
             throw new CertificateException('OpenSSL not available');
         }
-        $temp = openssl_x509_parse($cert, true);
-        if ($temp === false || !is_array($temp)) {
+        $this->cert = openssl_x509_parse($cert, true);
+        if ($this->cert === false || !is_array($this->cert)) {
             throw new CertificateException('Error parsing certificate');
         }
-        if (!isset($temp['subject']) || !isset($temp['issuer']) || !isset($temp['extensions'])) {
+        if (!isset($this->cert['subject']) || !isset($this->cert['issuer']) || !isset($this->cert['extensions'])) {
             throw new CertificateException('Invalid certificate');
         }
-        if (!isset($temp['extensions']) || !isset($temp['extensions']['certificatePolicies'])) {
+        if (!isset($this->cert['extensions']) || !isset($this->cert['extensions']['certificatePolicies'])) {
             throw new CertificateException('Missing certificate policies');
         }
-        $matches = [];
-        if (!preg_match(
-            '(\b(1\.3\.6\.1\.4\.1\.(?:18463|11290|15862|22144|30299))\.([.\d]+)\b)',
-            serialize($temp['extensions']),
-            $matches
-        )) {
-            throw new CertificateException('Unsupported certificate');
-        }
-        $issuer = $matches[1];
-        $certyp = $matches[2];
-        $parsed = [
-            'egn' => null,
-            'pid' => null,
-            'bulstat' => null
-        ];
 
-        $this->type = static::OTHER;
-        switch ($issuer) {
-            case '1.3.6.1.4.1.11290':
-                $this->issuer = static::STAMPIT;
-                switch ($certyp) {
-                    case '1.1.1.1':
-                        // doc pro
-                        $this->type = static::PROFESSIONAL;
-                        break;
-                    case '1.1.1.2':
-                        // server
-                        break;
-                    case '1.1.1.3':
-                        // object
-                        break;
-                    case '1.1.1.4':
-                        // enterprise
-                        $this->type = static::NONQUALIFIED;
-                        break;
-                    case '1.1.1.5':
-                        // doc
-                        $this->type = static::PERSONAL;
-                        break;
-                    default:
-                        throw new CertificateException('Unsupported certificate type');
-                }
-                if (isset($temp['subject']['ST']) && $this->type !== static::OTHER) {
-                    $parsed = $this->parseSubject(
-                        $temp['subject'],
+        $this->data     = [ 'pid' => null, 'egn' => null, 'bulstat' => null ];
+        $this->type     = static::UNKNOWN;
+        $this->issuer   = static::UNKNOWN;
+        $this->profile  = static::UNKNOWN;
+
+        // parse EU directive fields
+        if (isset($this->cert['subject']['serialNumber'])) {
+            $egn = [];
+            if (preg_match('((PNOBG|IDCBG)\-(\d+))i', $this->cert['subject']['serialNumber'], $egn)) {
+                $this->data[$egn[1] == 'PNOBG' ? 'egn' : 'pid'] = $egn[2];
+            }
+        }
+        if (isset($this->cert['subject']['organizationIdentifier'])) {
+            $bulstat = [];
+            if (preg_match('((VARBG|NTRBG)\-(\d+))i', $this->cert['subject']['organizationIdentifier'], $bulstat)) {
+                $this->data['bulstat'] = $bulstat[2];
+            }
+        } else if (isset($this->cert['name'])) {
+            $bulstat = [];
+            if (preg_match('(2\.5\.4\.97\s*=\s*(VARBG|NTRBG)\-(\d+)\b)i', $this->cert['name'], $bulstat)) {
+                $this->data['bulstat'] = $bulstat[2];
+            }
+        }
+
+        $ext = serialize($this->cert['extensions']);
+        foreach ([
+            static::STAMPIT,
+            static::BTRUST,
+            static::INFONOTARY,
+            static::SEP,
+            static::SPEKTAR,
+            static::EVROTRUST
+        ] as $issuer) {
+            if (preg_match('(\b('.preg_quote($issuer).')\.([.\d]+)\b)', $ext, $matches)) {
+                $this->issuer = $issuer;
+                $this->profile = $matches[2];
+                break;
+            }
+        }
+
+        switch ($this->issuer) {
+            case static::STAMPIT:
+                if (isset($this->cert['subject']['ST'])) {
+                    $this->parseSubject(
+                        $this->cert['subject'],
                         ['ST'],
                         ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                     );
                 }
-                break;
-            case '1.3.6.1.4.1.15862':
-                $this->issuer = static::BTRUST;
-                switch ($certyp) {
-                    case '1.5.1.1':
-                        // personal and professional in one
-                        $parsed = $this->parseSubject(
-                            $temp['subject'],
-                            ['ST', 'OU'],
-                            ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']
-                        );
-                        $this->type = isset($parsed['bulstat']) ? static::PROFESSIONAL : static::PERSONAL;
+                switch ($this->profile) {
+                    case '1.1.1.1': // doc pro
+                        $this->type = static::PROFESSIONAL;
                         break;
+                    case '1.1.1.5': // doc
+                        $this->type = static::PERSONAL;
+                        break;
+                    case '1.1.1.2': // server
+                    case '1.1.1.3': // object
+                    case '1.1.1.4': // enterprise
                     default:
-                        throw new CertificateException('Unsupported certificate type');
+                        break; // uknown profile
                 }
                 break;
-            case '1.3.6.1.4.1.22144':
-                $this->issuer = static::INFONOTARY;
-                if (!isset($temp['extensions']['subjectAltName'])) {
-                    throw new CertificateException('Unsupported certificate');
+            case static::BTRUST:
+                $this->parseSubject(
+                    $this->cert['subject'],
+                    ['ST', 'OU'],
+                    ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']
+                );
+                switch ($this->profile) {
+                    case '1.5.1.1': // personal and professional in one
+                        $this->type = isset($this->data['bulstat']) ? static::PROFESSIONAL : static::PERSONAL;
+                        break;
+                    default: // unknown profile
+                        break;
                 }
-                $isForeign = strpos($temp['extensions']['subjectAltName'], 'countryOfCitizenship') !== false;
-                if (preg_match('(countryOfCitizenship\s*=\s*BG\b)i', $temp['extensions']['subjectAltName'])) {
-                    $isForeign = false;
+                break;
+            case static::INFONOTARY:
+                if (isset($this->cert['extensions']['subjectAltName'])) {
+                    $isForeign = strpos($this->cert['extensions']['subjectAltName'], 'countryOfCitizenship') !== false;
+                    if (preg_match('(countryOfCitizenship\s*=\s*BG\b)i', $this->cert['extensions']['subjectAltName'])) {
+                        $isForeign = false;
+                    }
+                    $egn = [];
+                    if (preg_match('(2\.5\.4\.3\.100\.1\.1\s*=\s*(\d+)\b)i', $this->cert['extensions']['subjectAltName'], $egn)) {
+                        $this->data[$isForeign ? 'pid' : 'egn'] = $egn[1];
+                    }
                 }
-                $egn = [];
-                if (preg_match('(2\.5\.4\.3\.100\.1\.1\s*=\s*(\d+)\b)i', $temp['extensions']['subjectAltName'], $egn)) {
-                    $parsed[$isForeign ? 'pid' : 'egn'] = $egn[1];
-                }
-                switch ($certyp) {
+                switch ($this->profile) {
                     case '1.1.1.1':
-                    case '1.1.1.3':
-                        // personal & personal enforced CP
+                    case '1.1.1.3': // personal & personal enforced CP
                         $this->type = static::PERSONAL;
                         break;
                     case '1.1.2.1':
-                    case '1.1.2.3':
-                        // professional & professional enforced CP
+                    case '1.1.2.3': // professional & professional enforced CP
                         $this->type = static::PROFESSIONAL;
-                        if (!isset($temp['name'])) {
-                            throw new CertificateException('Unsupported certificate');
-                        }
-                        $bulstat = [];
-                        if (preg_match('(2\.5\.4\.10\.100\.1\.1\s*=\s*(\d+)\b)i', $temp['name'], $bulstat)) {
-                            $parsed['bulstat'] = $bulstat[1];
+                        if (isset($this->cert['name'])) {
+                            $bulstat = [];
+                            if (preg_match('(2\.5\.4\.10\.100\.1\.1\s*=\s*(\d+)\b)i', $this->cert['name'], $bulstat)) {
+                                $this->data['bulstat'] = $bulstat[1];
+                            }
                         }
                         break;
-                    default:
-                        throw new CertificateException('Unsupported certificate type');
+                    default: // unknown
+                        break;
                 }
                 break;
-            case '1.3.6.1.4.1.30299':
-                $this->issuer = static::SEP;
-                if (!isset($temp['subject']['UID'])) {
-                    throw new CertificateException('Unsupported certificate');
+            case static::SEP:
+                if (isset($this->cert['subject']['UID'])) {
+                    $egn = explode('EGN', $this->cert['subject']['UID'], 2);
+                    if (count($egn) === 2) {
+                        $this->data[strlen($egn[1]) === 10 ? 'egn' : 'pid'] = $egn[1];
+                    }
                 }
-                $egn = explode('EGN', $temp['subject']['UID'], 2);
-                if (count($egn) === 2) {
-                    $parsed[strlen($egn[1]) === 10 ? 'egn' : 'pid'] = $egn[1];
-                }
-                switch ($certyp) {
-                    case '1.1.1':
-                        // private
+                switch ($this->profile) {
+                    case '1.1.1': // private
                         $this->type = static::PERSONAL;
                         break;
-                    case '2.5.1':
-                        // private
+                    case '2.5.1': // private
                         $this->type = static::PERSONAL;
                         break;
-                    case '2.5.2':
-                        // organization
+                    case '2.5.2': // organization
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.5.3':
-                        // profession
+                    case '2.5.3': // profession
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.1.1':
-                        // personal
+                    case '2.1.1': // personal
                         $this->type = static::PERSONAL;
                         break;
-                    case '2.1.2':
-                        // organization
+                    case '2.1.2': // organization
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.1.3':
-                        // profession
+                    case '2.1.3': // profession
                         $this->type = static::PROFESSIONAL;
                         break;
-                    case '2.1.4':
-                        // server
+                    case '2.1.4': // server
+                    default: // unknown
                         break;
-                    default:
-                        throw new CertificateException('Unsupported certificate type');
                 }
                 if ($this->type === static::PROFESSIONAL) {
-                    if (isset($temp['subject']['OU'])) {
-                        $ou = $temp['subject']['OU'];
+                    if (isset($this->cert['subject']['OU'])) {
+                        $ou = $this->cert['subject']['OU'];
                         if (is_array($ou)) {
                             $ou = implode(',', $ou);
                         }
                         $bulstat = [];
                         if (preg_match('(EIK(\d+))i', $ou, $bulstat)) {
-                            $parsed['bulstat'] = $bulstat[1];
+                            $this->data['bulstat'] = $bulstat[1];
                         }
                     }
                 }
                 break;
-            case '1.3.6.1.4.1.18463':
-                $this->issuer = static::SPEKTAR;
-                switch ($certyp) {
+            case static::SPEKTAR:
+                switch ($this->profile) {
                     case '1.1.1.1':
                     case '1.1.1.2':
-                    case '1.1.1.5':
-                        // personal universal & personal universal restricted & qualified personal
+                    case '1.1.1.5': // personal universal & personal universal restricted & qualified personal
                         $this->type = static::PERSONAL;
-                        $parsed = $this->parseSubject($temp['subject'], ['OU'], ['EGNT'=>'egn', 'PID'=>'pid']);
+                        $this->parseSubject($this->cert['subject'], ['OU'], ['EGNT'=>'egn', 'PID'=>'pid']);
                         break;
                     case '1.1.1.3':
                     case '1.1.1.4':
-                    case '1.1.1.6':
-                        // org universal & org universal restricted & qualified org
+                    case '1.1.1.6': // org universal & org universal restricted & qualified org
                         $this->type = static::PROFESSIONAL;
-                        $parsed = $this->parseSubject(
-                            $temp['subject'],
+                        $this->parseSubject(
+                            $this->cert['subject'],
                             ['OU', 'title'],
                             ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                         );
                         break;
-                    default:
-                        throw new CertificateException('Unsupported certificate type');
+                    default: // uknown profile
+                        $this->parseSubject($this->cert['subject'], ['OU', 'title'], ['EGN' => 'egn', 'EGNT'=>'egn', 'PID'=>'pid']);
+                        break;
                 }
                 break;
-            default:
-                throw new CertificateException('Unsupported certificate');
+            case static::EVROTRUST:
+                switch ($this->profile) {
+                    case '2.2': // personal and professional in one
+                        $this->type = isset($this->data['bulstat']) ? static::PROFESSIONAL : static::PERSONAL;
+                        break;
+                    default: // unknown profile
+                        break;
+                }
+                break;
+            default: // unknown issuer
+                break;
         }
-        $this->cert = $temp;
-        $this->parsed = $parsed;
     }
     /**
      * Create an instance from the client request certificate.
@@ -261,13 +259,8 @@ class BG
         return new static(file_get_contents($file));
     }
 
-    protected function parseSubject($data, array $fields, array $map)
+    protected function parseSubject($data, array $fields, array $map, $rawName = '')
     {
-        $parsed = [
-            'egn' => null,
-            'pid' => null,
-            'bulstat' => null
-        ];
         foreach ($fields as $field) {
             if (!isset($data[$field])) {
                 continue;
@@ -288,9 +281,8 @@ class BG
                     }
                 }
             }
-            $parsed = array_merge($parsed, $temp);
+            $this->data = array_merge($this->data, $temp);
         }
-        return $parsed;
     }
 
     /**
@@ -326,6 +318,14 @@ class BG
         return $this->issuer;
     }
     /**
+     * Get the issuer profile of the certificate - either a string or UNKNOWN constant.
+     * @return int    the issuer constant
+     */
+    public function getProfile()
+    {
+        return $this->profile;
+    }
+    /**
      * Get the certificate type - one of the type constants.
      * @return int  the type constant
      */
@@ -350,12 +350,20 @@ class BG
         return $this->type === static::PROFESSIONAL;
     }
     /**
+     * Is the certificate issued by a known issuer under a known profile with a known type.
+     * @return boolean
+     */
+    public function isKnown()
+    {
+        return $this->type !== static::UNKNOWN && $this->type !== static::UNKNOWN && $this->profile !== static::UNKNOWN;
+    }
+    /**
      * Get the BULSTAT number (if the certificate is a professional one)
      * @return string|null   the BULSTAT number
      */
     public function getBulstat()
     {
-        return $this->parsed['bulstat'];
+        return $this->data['bulstat'];
     }
     /**
      * Get the EGN - if available.
@@ -363,7 +371,7 @@ class BG
      */
     public function getEGN()
     {
-        return $this->parsed['egn'];
+        return $this->data['egn'];
     }
     /**
      * Get the personal identification number - if available.
@@ -371,7 +379,7 @@ class BG
      */
     public function getPID()
     {
-        return $this->parsed['pid'];
+        return $this->data['pid'];
     }
     /**
      * Get the EGN or PID (whichever is available) - one will always be available in personal certificates.
@@ -379,7 +387,15 @@ class BG
      */
     public function getID()
     {
-        return $this->parsed['egn'] ?: $this->parsed['pid'];
+        return $this->data['egn'] ?: $this->data['pid'];
+    }
+    /**
+     * Get all IDS found in the certificate
+     * @return array key value pairs of ID type => ID value
+     */
+    public function getIDs()
+    {
+        return $this->data;
     }
     /**
      * Get the name of the subject.
