@@ -12,15 +12,19 @@
 |[getSubjectData](#vakata\certificate\bggetsubjectdata)|Get the subject data from the certificate (as returned from x509_parse).|
 |[getIssuerData](#vakata\certificate\bggetissuerdata)|Get the issuer data from the certificate (as returned from x509_parse).|
 |[getIssuer](#vakata\certificate\bggetissuer)|Get the issuer of the certificate - one of the issuer constants.|
+|[getProfile](#vakata\certificate\bggetprofile)|Get the issuer profile of the certificate - either a string or UNKNOWN constant.|
 |[getType](#vakata\certificate\bggettype)|Get the certificate type - one of the type constants.|
 |[isPersonal](#vakata\certificate\bgispersonal)|Is the certificate personal.|
 |[isProfessional](#vakata\certificate\bgisprofessional)|Is the certificate professional.|
+|[isKnown](#vakata\certificate\bgisknown)|Is the certificate issued by a known issuer under a known profile with a known type.|
 |[getBulstat](#vakata\certificate\bggetbulstat)|Get the BULSTAT number (if the certificate is a professional one)|
 |[getEGN](#vakata\certificate\bggetegn)|Get the EGN - if available.|
 |[getPID](#vakata\certificate\bggetpid)|Get the personal identification number - if available.|
 |[getID](#vakata\certificate\bggetid)|Get the EGN or PID (whichever is available) - one will always be available in personal certificates.|
+|[getIDs](#vakata\certificate\bggetids)|Get all IDS found in the certificate|
 |[getSubjectName](#vakata\certificate\bggetsubjectname)|Get the name of the subject.|
 |[getSubjectEmail](#vakata\certificate\bggetsubjectemail)|Get the email of the subject.|
+|[getSubjectOrganization](#vakata\certificate\bggetsubjectorganization)|Get the organization name (available if the certificate is a professional one).|
 
 ---
 
@@ -142,6 +146,22 @@ public function getIssuer () : int
 ---
 
 
+### vakata\certificate\BG::getProfile
+Get the issuer profile of the certificate - either a string or UNKNOWN constant.  
+
+
+```php
+public function getProfile () : int    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
+|  |  |  |
+| `return` | `int` | the issuer constant |
+
+---
+
+
 ### vakata\certificate\BG::getType
 Get the certificate type - one of the type constants.  
 
@@ -180,6 +200,22 @@ Is the certificate professional.
 
 ```php
 public function isProfessional () : boolean    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
+|  |  |  |
+| `return` | `boolean` |  |
+
+---
+
+
+### vakata\certificate\BG::isKnown
+Is the certificate issued by a known issuer under a known profile with a known type.  
+
+
+```php
+public function isKnown () : boolean    
 ```
 
 |  | Type | Description |
@@ -254,6 +290,22 @@ public function getID () : string, null
 ---
 
 
+### vakata\certificate\BG::getIDs
+Get all IDS found in the certificate  
+
+
+```php
+public function getIDs () : array    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
+|  |  |  |
+| `return` | `array` | key value pairs of ID type => ID value |
+
+---
+
+
 ### vakata\certificate\BG::getSubjectName
 Get the name of the subject.  
 
@@ -282,6 +334,22 @@ public function getSubjectEmail () : string, null
 |-----|-----|-----|
 |  |  |  |
 | `return` | `string`, `null` | the subject's email |
+
+---
+
+
+### vakata\certificate\BG::getSubjectOrganization
+Get the organization name (available if the certificate is a professional one).  
+
+
+```php
+public function getSubjectOrganization () : string, null    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
+|  |  |  |
+| `return` | `string`, `null` | the subject's organization |
 
 ---
 

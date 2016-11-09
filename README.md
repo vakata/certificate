@@ -23,6 +23,13 @@ $ composer require vakata/certificate
 // on Apache this will work if SSLOptions +ExportCertData is set
 $cert = \vakata\certificate\BG::fromRequest();
 
+// you should first check if the type / issuer / profile combination is OK
+// YOU COULD IGNORE THIS CHECK ON YOUR OWN RISK 
+// IF YOU WANT TO WORK WITH UNKNOWN ISSUERS / PROFILES
+if (!$cert->isKnown()) {
+    throw new \Exception('UNKNOWN CERTIFICATE');
+}
+
 // you can then get various information from the certificate
 if ($cert->isPersonal()) {
     echo $cert->getID(); // EGN or PID
