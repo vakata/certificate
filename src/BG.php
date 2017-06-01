@@ -35,7 +35,7 @@ class BG
      * Create an instance.
      * @param  string      $cert the certificate to parse
      */
-    public function __construct($cert)
+    public function __construct(string $cert)
     {
         if (!is_callable('openssl_x509_parse')) {
             throw new CertificateException('OpenSSL not available');
@@ -94,32 +94,47 @@ class BG
         switch ($this->issuer) {
             case static::STAMPIT:
                 if (isset($this->cert['subject']['ST'])) {
-                    $this->parseSubject(
+                    $parsed = $this->parseSubject(
                         $this->cert['subject'],
                         ['ST'],
                         ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                     );
+                    foreach ($parsed as $k => $v) {
+                        if ($v && !$this->data[$k]) {
+                            $this->data[$k] = $v;
+                        }
+                    }
                 }
                 switch ($this->profile) {
                     case '1.1.1.1': // doc pro
+                    case '1.2.1.2':
                         $this->type = static::PROFESSIONAL;
                         break;
                     case '1.1.1.5': // doc
+                    case '1.2.1.3':
                         $this->type = static::PERSONAL;
                         break;
                     case '1.1.1.2': // server
+                    case '1.2.2.3': // server
                     case '1.1.1.3': // object
+                    case '1.2.2.4': // object
                     case '1.1.1.4': // enterprise
+                    case '1.2.2.2': // enterprise
                     default:
                         break; // uknown profile
                 }
                 break;
             case static::BTRUST:
-                $this->parseSubject(
+                $parsed = $this->parseSubject(
                     $this->cert['subject'],
                     ['ST', 'OU'],
                     ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']
                 );
+                foreach ($parsed as $k => $v) {
+                    if ($v && !$this->data[$k]) {
+                        $this->data[$k] = $v;
+                    }
+                }
                 switch ($this->profile) {
                     case '1.5.1.1': // personal and professional in one
                         $this->type = isset($this->data['bulstat']) ? static::PROFESSIONAL : static::PERSONAL;
@@ -149,7 +164,9 @@ class BG
                         $this->type = static::PROFESSIONAL;
                         if (isset($this->cert['name'])) {
                             $bulstat = [];
-                            if (preg_match('(2\.5\.4\.10\.100\.1\.1\s*=\s*(\d+)\b)i', $this->cert['name'], $bulstat)) {
+                            if (!$this->data['bulstat'] &&
+                                preg_match('(2\.5\.4\.10\.100\.1\.1\s*=\s*(\d+)\b)i', $this->cert['name'], $bulstat)
+                            ) {
                                 $this->data['bulstat'] = $bulstat[1];
                             }
                         }
@@ -198,7 +215,7 @@ class BG
                             $ou = implode(',', $ou);
                         }
                         $bulstat = [];
-                        if (preg_match('(EIK(\d+))i', $ou, $bulstat)) {
+                        if (!$this->data['bulstat'] && preg_match('(EIK(\d+))i', $ou, $bulstat)) {
                             $this->data['bulstat'] = $bulstat[1];
                         }
                     }
@@ -210,20 +227,43 @@ class BG
                     case '1.1.1.2':
                     case '1.1.1.5': // personal universal & personal universal restricted & qualified personal
                         $this->type = static::PERSONAL;
-                        $this->parseSubject($this->cert['subject'], ['OU'], ['EGNT'=>'egn', 'PID'=>'pid']);
+                        $parsed = $this->parseSubject(
+                            $this->cert['subject'],
+                            ['OU'],
+                            ['EGNT'=>'egn', 'PID'=>'pid']
+                        );
+                        foreach ($parsed as $k => $v) {
+                            if ($v && !$this->data[$k]) {
+                                $this->data[$k] = $v;
+                            }
+                        }
                         break;
                     case '1.1.1.3':
                     case '1.1.1.4':
                     case '1.1.1.6': // org universal & org universal restricted & qualified org
                         $this->type = static::PROFESSIONAL;
-                        $this->parseSubject(
+                        $parsed = $this->parseSubject(
                             $this->cert['subject'],
                             ['OU', 'title'],
                             ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                         );
+                        foreach ($parsed as $k => $v) {
+                            if ($v && !$this->data[$k]) {
+                                $this->data[$k] = $v;
+                            }
+                        }
                         break;
                     default: // uknown profile
-                        $this->parseSubject($this->cert['subject'], ['OU', 'title'], ['EGN' => 'egn', 'EGNT'=>'egn', 'PID'=>'pid']);
+                        $parsed = $this->parseSubject(
+                            $this->cert['subject'],
+                            ['OU', 'title'],
+                            ['EGN' => 'egn', 'EGNT'=>'egn', 'PID'=>'pid']
+                        );
+                        foreach ($parsed as $k => $v) {
+                            if ($v && !$this->data[$k]) {
+                                $this->data[$k] = $v;
+                            }
+                        }
                         break;
                 }
                 break;
@@ -245,7 +285,7 @@ class BG
      * @return \vakata\certificate\BG      the certificate instance
      * @codeCoverageIgnore
      */
-    public static function fromRequest()
+    public static function fromRequest() : BG
     {
         return new static($_SERVER['SSL_CLIENT_CERT']);
     }
@@ -254,13 +294,14 @@ class BG
      * @param  string   $file the path to the certificate file to parse
      * @return \vakata\certificate\BG      the certificate instance
      */
-    public static function fromFile($file)
+    public static function fromFile(string $file) : BG
     {
         return new static(file_get_contents($file));
     }
 
-    protected function parseSubject($data, array $fields, array $map, $rawName = '')
+    protected function parseSubject($data, array $fields, array $map) : array
     {
+        $parsed = [];
         foreach ($fields as $field) {
             if (!isset($data[$field])) {
                 continue;
@@ -281,8 +322,9 @@ class BG
                     }
                 }
             }
-            $this->data = array_merge($this->data, $temp);
+            $parsed = array_merge($parsed, $temp);
         }
+        return $parsed;
     }
 
     /**
@@ -339,7 +381,7 @@ class BG
      */
     public function isPersonal()
     {
-        return $this->type === static::PERSONAL;
+        return !$this->isProfessional();
     }
     /**
      * Is the certificate professional.
@@ -347,15 +389,15 @@ class BG
      */
     public function isProfessional()
     {
-        return $this->type === static::PROFESSIONAL;
+        return $this->type === static::PROFESSIONAL || $this->getBulstat() !== null;
     }
     /**
-     * Is the certificate issued by a known issuer under a known profile with a known type.
+     * Is the certificate issued by a known issuer.
      * @return boolean
      */
     public function isKnown()
     {
-        return $this->type !== static::UNKNOWN && $this->type !== static::UNKNOWN && $this->profile !== static::UNKNOWN;
+        return $this->issuer !== static::UNKNOWN && $this->type !== static::UNKNOWN;
     }
     /**
      * Get the BULSTAT number (if the certificate is a professional one)
@@ -387,7 +429,7 @@ class BG
      */
     public function getID()
     {
-        return $this->data['egn'] ?: $this->data['pid'];
+        return $this->data['egn'] ?? $this->data['pid'] ?? null;
     }
     /**
      * Get all IDS found in the certificate
@@ -411,7 +453,7 @@ class BG
      */
     public function getSubjectEmail()
     {
-        return isset($this->cert['subject']['emailAddress']) ? $this->cert['subject']['emailAddress'] : null;
+        return $this->cert['subject']['emailAddress'] ?? null;
     }
     /**
      * Get the organization name (available if the certificate is a professional one).
@@ -419,6 +461,6 @@ class BG
      */
     public function getSubjectOrganization()
     {
-        return isset($this->cert['subject']['O']) ? $this->cert['subject']['O'] : null;
+        return $this->cert['subject']['O'] ?? null;
     }
 }
