@@ -6,7 +6,7 @@
 [![Code Climate][ico-cc]][link-cc]
 [![Tests Coverage][ico-cc-coverage]][link-cc]
 
-Parsing of digital certificates from all Bulgarian vendors.
+Parsing of digital certificates from all Bulgarian vendors (and all other vendors compatible with [the common EU standard](http://www.etsi.org/deliver/etsi_en/319400_319499/31941201/01.01.00_30/en_31941201v010100v.pdf)).
 
 ## Install
 
@@ -21,25 +21,18 @@ $ composer require vakata/certificate
 ``` php
 // parse the certificate from the current request ($_SERVER['SSL_CLIENT_CERT'])
 // on Apache this will work if SSLOptions +ExportCertData is set
-$cert = \vakata\certificate\BG::fromRequest();
-
-// you should first check if the type / issuer / profile combination is OK
-// YOU COULD IGNORE THIS CHECK ON YOUR OWN RISK 
-// IF YOU WANT TO WORK WITH UNKNOWN ISSUERS / PROFILES
-if (!$cert->isKnown()) {
-    throw new \Exception('UNKNOWN CERTIFICATE');
-}
+$cert = \vakata\certificate\Certificate::fromRequest();
 
 // you can then get various information from the certificate
-if ($cert->isPersonal()) {
-    echo $cert->getID(); // EGN or PID
-}
+echo $cert->getNaturalPerson()->getID(); // EGN or PID
 if ($cert->isProfessional()) {
-    echo $cert->getBulstat(); // BULSTAT
+    echo $cert->getLegalPerson()->getBulstat(); // BULSTAT
 }
 
 // you can also create an instance from a x509 string
-$certStr = new \vakata\certificate\BG("x509 formatted string");
+$certStr = new \vakata\certificate\Certificate("x509 formatted string");
+// or using a static method
+$certStr = new \vakata\certificate\Certificate::fromString("x509 formatted string");
 // or from a file
 $certFile = \vakata\certificate\BG::fromFile("/path/to/file.crt");
 ```

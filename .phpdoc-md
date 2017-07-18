@@ -4,6 +4,9 @@ return (object)[
     'destDirectory' => 'docs',
     'format' => 'github',
     'classes' => [
-        '\\vakata\\certificate\\BG'
+        '\\vakata\\certificate\\Certificate',
+        '\\vakata\\certificate\\Person',
+        '\\vakata\\certificate\\NaturalPerson',
+        '\\vakata\\certificate\\LegalPerson'
     ],
 ];
