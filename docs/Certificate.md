@@ -9,9 +9,9 @@
 |[fromFile](#vakata\certificate\certificatefromfile)|Create an instance from a file.|
 |[fromString](#vakata\certificate\certificatefromstring)|Create an instance from a string.|
 |[__construct](#vakata\certificate\certificate__construct)|Create an instance.|
-|[getData](#vakata\certificate\certificategetdata)|Get the full certificate data (as returned from x509_parse).|
-|[getSubjectData](#vakata\certificate\certificategetsubjectdata)|Get the subject data from the certificate (as returned from x509_parse).|
-|[getIssuerData](#vakata\certificate\certificategetissuerdata)|Get the issuer data from the certificate (as returned from x509_parse).|
+|[getData](#vakata\certificate\certificategetdata)|Get the full certificate data.|
+|[getSubjectData](#vakata\certificate\certificategetsubjectdata)|Get the subject data from the certificate.|
+|[getIssuerData](#vakata\certificate\certificategetissuerdata)|Get the issuer data from the certificate.|
 |[isPersonal](#vakata\certificate\certificateispersonal)|Is the certificate personal.|
 |[isProfessional](#vakata\certificate\certificateisprofessional)|Is the certificate professional.|
 |[getLegalPerson](#vakata\certificate\certificategetlegalperson)|Get the legal person if available|
@@ -94,7 +94,7 @@ public function __construct (
 
 
 ### vakata\certificate\Certificate::getData
-Get the full certificate data (as returned from x509_parse).  
+Get the full certificate data.  
 
 
 ```php
@@ -110,7 +110,7 @@ public function getData () : array
 
 
 ### vakata\certificate\Certificate::getSubjectData
-Get the subject data from the certificate (as returned from x509_parse).  
+Get the subject data from the certificate.  
 
 
 ```php
@@ -126,7 +126,7 @@ public function getSubjectData () : array
 
 
 ### vakata\certificate\Certificate::getIssuerData
-Get the issuer data from the certificate (as returned from x509_parse).  
+Get the issuer data from the certificate.  
 
 
 ```php
@@ -210,13 +210,16 @@ Get the public key from the certificate
 
 
 ```php
-public function getPublicKey () : string, null    
+public function getPublicKey (  
+    bool $pemEncoded  
+) : string    
 ```
 
 |  | Type | Description |
 |-----|-----|-----|
+| `$pemEncoded` | `bool` | should the result be pem encoded or raw binary, defaults to true |
 |  |  |  |
-| `return` | `string`, `null` |  |
+| `return` | `string` |  |
 
 ---
 
