@@ -34,7 +34,7 @@ $certStr = new \vakata\certificate\Certificate("x509 formatted string");
 // or using a static method
 $certStr = new \vakata\certificate\Certificate::fromString("x509 formatted string");
 // or from a file
-$certFile = \vakata\certificate\BG::fromFile("/path/to/file.crt");
+$certFile = \vakata\certificate\Certificate::fromFile("/path/to/file.crt");
 ```
 
 Read more in the [API docs](docs/README.md)
