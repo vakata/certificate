@@ -6,16 +6,22 @@ class NaturalPerson extends Person
 {
     protected $name;
     protected $mail;
+    protected $data;
 
-    public function __construct(string $name, string $idProvider, string $id, string $country = null, string $mail = null)
+    public function __construct(string $name, string $idProvider, string $id, string $country = null, string $mail = null, array $data = [])
     {
         parent::__construct($idProvider, $id, $country);
         $this->name = $name;
         $this->mail = $mail;
+        $this->data = $data;
     }
     public function getName() : string
     {
         return $this->name;
+    }
+    public function getData() : string
+    {
+        return $this->data;
     }
     public function getMail()
     {

@@ -2,6 +2,8 @@
 
 namespace vakata\certificate;
 
+use vakata\asn1\Certificate as ASN1;
+
 class Certificate
 {
     protected $cert;
@@ -59,24 +61,59 @@ class Certificate
     }
 
     /**
-     * Parse the certificate using openssl
+     * Parse the certificate
      *
      * @param string $cert the certificate to parse
      * @return array the parsed certificate
      */
     protected function parseCertificate(string $cert) : array
     {
-        if (!is_callable('openssl_x509_parse')) {
-            throw new CertificateException('OpenSSL not available');
+        try {
+            $data = ASN1::parseData($cert);
+            $data = $data['tbsCertificate'];
+        } catch (\Exception $e) {
+            throw new CertificateException('Could not parse certificate');
         }
-        $data = openssl_x509_parse($cert, true);
         if ($data === false || !is_array($data)) {
             throw new CertificateException('Error parsing certificate');
         }
         if (!isset($data['subject']) || !isset($data['issuer']) || !isset($data['extensions'])) {
             throw new CertificateException('Invalid certificate');
         }
-        if (!isset($data['extensions']) || !isset($data['extensions']['certificatePolicies'])) {
+        $temp = [];
+        foreach ($data['subject'] as $item) {
+            foreach ($item as $subitem) {
+                if (isset($temp[$subitem['key']])) {
+                    if (!is_array($temp[$subitem['key']])) {
+                        $temp[$subitem['key']] = [ $temp[$subitem['key']] ];
+                    }
+                    $temp[$subitem['key']][] = $subitem['value'];
+                } else {
+                    $temp[$subitem['key']] = $subitem['value'];
+                }
+            }
+        }
+        $data['subject'] = $temp;
+        $temp = [];
+        foreach ($data['issuer'] as $item) {
+            foreach ($item as $subitem) {
+                if (isset($temp[$subitem['key']])) {
+                    if (!is_array($temp[$subitem['key']])) {
+                        $temp[$subitem['key']] = [ $temp[$subitem['key']] ];
+                    }
+                    $temp[$subitem['key']][] = $subitem['value'];
+                } else {
+                    $temp[$subitem['key']] = $subitem['value'];
+                }
+            }
+        }
+        $data['issuer'] = $temp;
+        $temp = [];
+        foreach ($data['extensions'] as $item) {
+            $temp[$item['extnID']] = $item['extnValue'];
+        }
+        $data['extensions'] = $temp;
+        if (!isset($data['extensions']['certificatePolicies'])) {
             throw new CertificateException('Missing certificate policies');
         }
         return $data;
@@ -96,11 +133,12 @@ class Certificate
             preg_match('((PAS|IDC|PNO|TAX|TIN|[A-Z]{2}\:)([A-Z]{2})\-(.*))i', $natural, $temp)
         ) {
             return new NaturalPerson(
-                $cert['subject']['CN'],
+                $cert['subject']['commonName'],
                 $temp[1],
                 $temp[3],
                 $temp[2],
-                $cert['subject']['emailAddress'] ?? null
+                $cert['subject']['emailAddress'] ?? null,
+                $this->getSubjectData()
             );
         }
         return null;
@@ -115,16 +153,11 @@ class Certificate
     protected function parseLegalPerson(array $cert)
     {
         $legal = $cert['subject']['organizationIdentifier'] ?? null;
-        if (!isset($legal) && isset($cert['name']) &&
-            preg_match('(2\.5\.4\.97=(.*?)/)i', $cert['name'], $temp)
-        ) {
-            $legal = $temp[1];
-        }
         if (isset($legal) &&
             preg_match('((VAT|NTR|[A-Z]{2}\:)([A-Z]{2})\-(.*))i', $legal, $temp)
         ) {
             return new LegalPerson(
-                $cert['subject']['O'],
+                $cert['subject']['organization'],
                 $temp[1],
                 $temp[3],
                 $temp[2]
@@ -188,33 +221,35 @@ class Certificate
 
         switch ($iss) {
             case 'STAMPIT':
-                if (in_array($pro, ['1.1.1.5', '1.2.1.3', '1.1.1.1', '1.2.1.2']) && isset($cert['subject']['ST'])) {
+                if (in_array($pro, ['1.1.1.5', '1.2.1.3', '1.1.1.1', '1.2.1.2']) && isset($cert['subject']['stateOrProvinceName'])) {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['ST'],
+                        ['stateOrProvinceName'],
                         ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['C'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['countryName'] ?? null,
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (in_array($pro, ['1.1.1.1', '1.2.1.2']) && isset($parsed['bulstat']) && $parsed['bulstat']) {
                         $leg = new LegalPerson(
-                            $cert['subject']['O'],
+                            $cert['subject']['organization'],
                             'NTR',
                             $parsed['bulstat'],
                             null
@@ -226,30 +261,32 @@ class Certificate
                 if ($pro === '1.5.1.1') {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['ST', 'OU'],
+                        ['stateOrProvinceName', 'organizationalUnit'],
                         ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['C'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['countryName'] ?? null,
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['bulstat']) && $parsed['bulstat']) {
                         $leg = new LegalPerson(
-                            $cert['subject']['O'],
+                            $cert['subject']['organization'],
                             'NTR',
                             $parsed['bulstat'],
                             null
@@ -259,29 +296,29 @@ class Certificate
                 break;
             case 'INFONOTARY':
                 if (in_array($pro, ['1.1.1.1', '1.1.1.3', '1.1.2.1', '1.1.2.3'])) {
-                    if (isset($cert['extensions']['subjectAltName'])) {
-                        $cntr = 'BG';
-                        $temp = [];
-                        if (preg_match('(countryOfCitizenship\s*=\s*([A-Z]{2})\b)i', $cert['extensions']['subjectAltName'], $temp)) {
-                            $cntr = $temp[1];
-                        }
-                        if (preg_match('(2\.5\.4\.3\.100\.1\.1\s*=\s*(\d+)\b)i', $cert['extensions']['subjectAltName'], $temp)) {
+                    $original = $cert['extensions']['subjectAltName'][0][0] ?? [];
+                    $compacted = [];
+                    foreach ($original as $item) {
+                        $compacted[$item[0]] = $item[1];
+                    }
+                    if (count($compacted)) {
+                        if (isset($compacted['2.5.4.3.100.1.1'])) {
                             $nat = new NaturalPerson(
-                                $cert['subject']['CN'],
+                                $cert['subject']['commonName'],
                                 'PNO',
-                                $temp[1],
-                                $cntr,
-                                $cert['subject']['emailAddress'] ?? null
+                                $compacted['2.5.4.3.100.1.1'],
+                                $compacted['countryOfCitizenship'] ?? 'BG',
+                                $cert['subject']['emailAddress'] ?? null,
+                                $this->getSubjectData()
                             );
                         }
                     }
                     if (in_array($pro, ['1.1.2.1', '1.1.2.3'])) {
-                        $temp = [];
-                        if (preg_match('(2\.5\.4\.10\.100\.1\.1\s*=\s*(\d+)\b)i', $cert['name'], $temp)) {
+                        if (isset($cert['subject']['2.5.4.10.100.1.1'])) {
                             $leg = new LegalPerson(
-                                $cert['subject']['O'],
+                                $cert['subject']['organization'],
                                 'NTR',
-                                $temp[1],
+                                $cert['subject']['2.5.4.10.100.1.1'],
                                 null
                             );
                         }
@@ -289,28 +326,29 @@ class Certificate
                 }
                 break;
             case 'SEP':
-                if (in_array($pro, ['1.1.1', '2.5.1', '2.1.1', '2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject']['UID'])) {
-                    $egn = explode('EGN', $cert['subject']['UID'], 2);
+                if (in_array($pro, ['1.1.1', '2.5.1', '2.1.1', '2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject']['userid'])) {
+                    $egn = explode('EGN', $cert['subject']['userid'], 2);
                     if (count($egn) === 2) {
                         $egn = $egn[1];
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $egn,
-                            $cert['subject']['C'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['countryName'] ?? null,
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                 }
-                if (in_array($pro, ['2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject']['OU'])) {
-                    $ou = $cert['subject']['OU'];
+                if (in_array($pro, ['2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject']['organizationalUnit'])) {
+                    $ou = $cert['subject']['organizationalUnit'];
                     if (is_array($ou)) {
                         $ou = implode(',', $ou);
                     }
                     $temp = [];
                     if (preg_match('(EIK(\d+))i', $ou, $temp)) {
                         $leg = new LegalPerson(
-                            $cert['subject']['O'],
+                            $cert['subject']['organization'],
                             'NTR',
                             $temp[1],
                             null
@@ -322,54 +360,58 @@ class Certificate
                 if (in_array($pro, ['1.1.1.1', '1.1.1.2', '1.1.1.5'])) {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['OU'],
+                        ['organizationalUnit'],
                         ['EGNT'=>'egn', 'PID'=>'pid']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['C'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['countryName'] ?? null,
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                 } elseif (in_array($pro, ['1.1.1.3', '1.1.1.4', '1.1.1.6'])) {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['OU', 'title'],
+                        ['organizationalUnit', 'title'],
                         ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['C'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['countryName'] ?? null,
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['bulstat']) && $parsed['bulstat']) {
                         $leg = new LegalPerson(
-                            $cert['subject']['O'],
+                            $cert['subject']['organization'],
                             'NTR',
                             $parsed['bulstat'],
                             null
@@ -378,25 +420,27 @@ class Certificate
                 } else {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['OU', 'title'],
+                        ['organizationalUnit', 'title'],
                         ['EGN' => 'egn', 'EGNT'=>'egn', 'PID'=>'pid']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['C'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['countryName'] ?? null,
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['CN'],
+                            $cert['subject']['commonName'],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null
+                            $cert['subject']['emailAddress'] ?? null,
+                            $this->getSubjectData()
                         );
                     }
                 }
@@ -407,7 +451,7 @@ class Certificate
     }
 
     /**
-     * Get the full certificate data (as returned from x509_parse).
+     * Get the full certificate data.
      * @return array  the certificate data
      */
     public function getData()
@@ -416,16 +460,21 @@ class Certificate
     }
 
     /**
-     * Get the subject data from the certificate (as returned from x509_parse).
+     * Get the subject data from the certificate.
      * @return array  the certificate subject data
      */
-    public function getSubjectData()
+    public function getSubjectData() : array
     {
-        return $this->cert['subject'];
+        $original = $this->cert['extensions']['subjectAltName'][0][0] ?? [];
+        $compacted = [];
+        foreach ($original as $item) {
+            $compacted[$item[0]] = $item[1];
+        }
+        return array_merge($compacted, $this->cert['subject']);
     }
 
     /**
-     * Get the issuer data from the certificate (as returned from x509_parse).
+     * Get the issuer data from the certificate.
      * @return array  the certificate subject data
      */
     public function getIssuerData()
@@ -476,11 +525,13 @@ class Certificate
      */
     public function getPublicKey()
     {
+        /*
         $temp = openssl_pkey_get_public($this->data);
         if ($temp === false) {
             return null;
         }
         $data = openssl_pkey_get_details($temp);
         return $data !== false && isset($data['key']) ? $data['key'] : null;
+        */
     }
 }
