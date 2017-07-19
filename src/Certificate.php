@@ -2,7 +2,8 @@
 
 namespace vakata\certificate;
 
-use vakata\asn1\Certificate as ASN1;
+use vakata\asn1\ASN1 as ASN1;
+use vakata\asn1\Certificate as Parser;
 
 class Certificate
 {
@@ -69,7 +70,7 @@ class Certificate
     protected function parseCertificate(string $cert) : array
     {
         try {
-            $data = ASN1::parseData($cert);
+            $data = Parser::parseData($cert);
             $data = $data['tbsCertificate'];
         } catch (\Exception $e) {
             throw new CertificateException('Could not parse certificate');
@@ -521,17 +522,39 @@ class Certificate
     /**
      * Get the public key from the certificate
      *
-     * @return string|null
+     * @param bool $pemEncoded should the result be pem encoded or raw binary, defaults to true
+     * @return string
      */
-    public function getPublicKey()
+    public function getPublicKey(bool $pemEncoded = true) : string
     {
-        /*
-        $temp = openssl_pkey_get_public($this->data);
-        if ($temp === false) {
-            return null;
+        $map = [
+            'tag' => ASN1::TYPE_SEQUENCE,
+            'children' => [
+                'algorithm' => [
+                    'tag' => ASN1::TYPE_SEQUENCE,
+                    'children' => [
+                        "algorithm" => [
+                            'tag' => ASN1::TYPE_OBJECT_IDENTIFIER
+                        ],
+                        'parameters' => [
+                            'tag' => ASN1::TYPE_ANY,
+                            'optional' => true
+                        ]
+                    ]
+                ],
+                'publicKey' => [
+                    'tag' => ASN1::TYPE_BIT_STRING,
+                    'raw' => true
+                ]
+            ]
+        ];
+        $pkey = ASN1::encodeDER($this->cert['SubjectPublicKeyInfo'], $map);
+        if ($pemEncoded) {
+            $pkey = '' .
+                '-----BEGIN PUBLIC KEY-----' . "\n" .
+                wordwrap(base64_encode($pkey), 64, "\n", true) . "\n" .
+                '-----END PUBLIC KEY-----' . "\n";
         }
-        $data = openssl_pkey_get_details($temp);
-        return $data !== false && isset($data['key']) ? $data['key'] : null;
-        */
+        return $pkey;
     }
 }
