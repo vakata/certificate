@@ -557,4 +557,14 @@ class Certificate
         }
         return $pkey;
     }
+
+    /**
+     * Get the certificate's serial number in HEX form
+     *
+     * @return string
+     */
+    public function getSerialNumber() : string
+    {
+        return $this->getData()['serialNumber'];
+    }
 }

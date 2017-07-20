@@ -17,6 +17,7 @@
 |[getLegalPerson](#vakata\certificate\certificategetlegalperson)|Get the legal person if available|
 |[getNaturalPerson](#vakata\certificate\certificategetnaturalperson)|Get the natural person|
 |[getPublicKey](#vakata\certificate\certificategetpublickey)|Get the public key from the certificate|
+|[getSerialNumber](#vakata\certificate\certificategetserialnumber)|Get the certificate's serial number in HEX form|
 
 ---
 
@@ -218,6 +219,22 @@ public function getPublicKey (
 |  | Type | Description |
 |-----|-----|-----|
 | `$pemEncoded` | `bool` | should the result be pem encoded or raw binary, defaults to true |
+|  |  |  |
+| `return` | `string` |  |
+
+---
+
+
+### vakata\certificate\Certificate::getSerialNumber
+Get the certificate's serial number in HEX form  
+
+
+```php
+public function getSerialNumber () : string    
+```
+
+|  | Type | Description |
+|-----|-----|-----|
 |  |  |  |
 | `return` | `string` |  |
 
