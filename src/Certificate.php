@@ -567,4 +567,41 @@ class Certificate
     {
         return $this->getData()['serialNumber'];
     }
+
+    /**
+     * Get all certificate policy OIDs as an array of strings
+     *
+     * @return array
+     */
+    public function getPolicies() : array
+    {
+        $policies = [];
+        $temp = $this->getData()['extensions']['certificatePolicies'];
+        foreach ($temp as $policy) {
+            $policies[] = $policy[0];
+        }
+        return $policies;
+    }
+
+    /**
+     * Get all certificate policy OIDs related to the CA's Certification Practice Statement as an array of strings
+     *
+     * @return array
+     */
+    public function getCPSPolicies() : array
+    {
+        $policies = [];
+        $temp = $this->getData()['extensions']['certificatePolicies'];
+        foreach ($temp as $policy) {
+            if (!isset($policy[1])) {
+                continue;
+            }
+            foreach ($policy[1] as $policyId) {
+                if (strtolower($policyId[0]) === 'cps') {
+                    $policies[] = $policy[0];
+                }
+            }
+        }
+        return $policies;
+    }
 }
