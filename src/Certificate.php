@@ -576,7 +576,7 @@ class Certificate
     public function getPolicies() : array
     {
         $policies = [];
-        $temp = $this->getData()['extensions']['certificatePolicies'];
+        $temp = $this->cert['extensions']['certificatePolicies'];
         foreach ($temp as $policy) {
             $policies[] = $policy[0];
         }
@@ -591,7 +591,7 @@ class Certificate
     public function getCPSPolicies() : array
     {
         $policies = [];
-        $temp = $this->getData()['extensions']['certificatePolicies'];
+        $temp = $this->cert['extensions']['certificatePolicies'];
         foreach ($temp as $policy) {
             if (!isset($policy[1])) {
                 continue;
@@ -603,5 +603,14 @@ class Certificate
             }
         }
         return $policies;
+    }
+    /**
+     * Is the certificate valid, checks currently include dates only
+     *
+     * @return bool
+     */
+    public function isValid() : bool
+    {
+        return time() >= $this->cert['validity']['notBefore'] && time() <= $this->cert['validity']['notAfter'];
     }
 }
