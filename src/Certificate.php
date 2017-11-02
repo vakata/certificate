@@ -4,61 +4,86 @@ namespace vakata\certificate;
 
 use vakata\asn1\ASN1 as ASN1;
 use vakata\asn1\Certificate as Parser;
+use vakata\asn1\CRL as CRLParser;
 
 class Certificate
 {
     protected $cert;
     protected $data;
+    protected $sign;
     protected $naturalPerson;
     protected $legalPerson;
 
     /**
      * Create an instance from the client request certificate.
+     * 
+     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      * @return \vakata\certificate\Certificate      the certificate instance
      * @codeCoverageIgnore
      */
-    public static function fromRequest() : Certificate
+    public static function fromRequest(bool $requirePerson = true) : Certificate
     {
-        return new static($_SERVER['SSL_CLIENT_CERT']);
+        return new static($_SERVER['SSL_CLIENT_CERT'], $requirePerson);
     }
 
     /**
      * Create an instance from a file.
      * @param  string   $file the path to the certificate file to parse
+     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      * @return \vakata\certificate\Certificate      the certificate instance
      */
-    public static function fromFile(string $file) : Certificate
+    public static function fromFile(string $file, bool $requirePerson = true) : Certificate
     {
-        return new static(file_get_contents($file));
+        return new static(file_get_contents($file), $requirePerson);
     }
 
     /**
      * Create an instance from a string.
      * @param  string   $data the certificate
+     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      * @return \vakata\certificate\Certificate      the certificate instance
      */
-    public static function fromString(string $data) : Certificate
+    public static function fromString(string $data, bool $requirePerson = true) : Certificate
     {
-        return new static($data);
+        return new static($data, $requirePerson);
     }
 
     /**
      * Create an instance.
      * @param  string      $cert the certificate to parse
+     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      */
-    public function __construct(string $cert)
+    public function __construct(string $cert, bool $requirePerson = true)
     {
+        $temp = $this->parseCertificate($cert);
         $this->data          = $cert;
-        $this->cert          = $this->parseCertificate($cert);
+        $this->cert          = $temp['cert'];
+        $this->sign          = $temp['sign'];
         $this->naturalPerson = $this->parseNaturalPerson($this->cert);
         $this->legalPerson   = $this->parseLegalPerson($this->cert);
         if ($this->naturalPerson === null) {
             list($this->naturalPerson, $this->legalPerson) = $this->parseLegacyCertificate($this->cert);
         }
         // Allowing certificates with no natural person because of infonotary certificates
-        if ($this->naturalPerson === null && $this->legalPerson === null) {
+        if ($requirePerson && $this->naturalPerson === null && $this->legalPerson === null) {
             throw new CertificateException('Missing natural or legal person data');
         }
+    }
+
+    /**
+     * Convert base256 to hex format
+     *
+     * @param string $inp
+     * @return string
+     */
+    protected static function base256toHex($inp) : string
+    {
+        $num = ASN1::fromBase256($inp);
+        $hex = '';
+        for ($i = strlen($num) - 4; $i >= 0; $i-=4) {
+            $hex .= dechex(bindec(substr($num, $i, 4)));
+        }
+        return strrev($hex);
     }
 
     /**
@@ -70,8 +95,8 @@ class Certificate
     protected function parseCertificate(string $cert) : array
     {
         try {
-            $data = Parser::parseData($cert);
-            $data = $data['tbsCertificate'];
+            $orig = Parser::parseData($cert);
+            $data = $orig['tbsCertificate'];
         } catch (\Exception $e) {
             throw new CertificateException('Could not parse certificate');
         }
@@ -117,7 +142,36 @@ class Certificate
         if (!isset($data['extensions']['certificatePolicies'])) {
             throw new CertificateException('Missing certificate policies');
         }
-        return $data;
+        if (isset($data['extensions']['subjectKeyIdentifier'])) {
+            $data['extensions']['subjectKeyIdentifier'] = static::base256toHex(
+                $data['extensions']['subjectKeyIdentifier']
+            );
+        }
+        if (isset($data['extensions']['authorityKeyIdentifier'])) {
+            if (isset($data['extensions']['authorityKeyIdentifier'][0])) {
+                $data['extensions']['authorityKeyIdentifier'][0] = static::base256toHex(
+                    $data['extensions']['authorityKeyIdentifier'][0]
+                );
+            }
+            if (isset($data['extensions']['authorityKeyIdentifier'][2])) {
+                $data['extensions']['authorityKeyIdentifier'][2] = static::base256toHex(
+                    $data['extensions']['authorityKeyIdentifier'][2]
+                );
+            }
+        }
+        if (strpos($cert, '-BEGIN CERTIFICATE-') !== false) {
+            $cert = str_replace(['-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----', "\r", "\n"], '', $cert);
+            $cert = base64_decode($cert);
+        }
+        $temp = ASN1::decodeDER($cert, null, true);
+        return [
+            'cert' => $data,
+            'sign' => [
+                'algorithm' => $orig['signatureAlgorithm'],
+                'signature' => $orig['signatureValue'],
+                'subject'   => substr($cert, $temp['contents'][0]['start'], $temp['contents'][0]['length'])
+            ]
+        ];
     }
 
     /**
@@ -605,12 +659,77 @@ class Certificate
         return $policies;
     }
     /**
-     * Is the certificate valid, checks currently include dates only
+     * Is the certificate valid, checks currently include dates & signature and CRL list
+     *
+     * @param array $ca optional array of strings where each string is a CA certificate
+     * @return bool
+     */
+    public function isValid(array $ca = null) : bool
+    {
+        return !$this->isExpired() && !$this->isRevoked() && ($ca === null || $this->isSignatureValid($ca));
+    }
+    /**
+     * Is the certificate currently valid - checks notBefore and notAfter dates
      *
      * @return bool
      */
-    public function isValid() : bool
+    public function isExpired() : bool
     {
         return time() >= $this->cert['validity']['notBefore'] && time() <= $this->cert['validity']['notAfter'];
+    }
+    /**
+     * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
+     *
+     * @return bool
+     */
+    public function isRevoked() : bool
+    {
+        $points = $this->cert['extensions']['cRLDistributionPoints'] ?? [];
+        foreach ($points as $point) {
+            if (strpos($point[0], 'http') === 0) {
+                $data = @file_get_contents($point[0]);
+                if ($data !== false) {
+                    try {
+                        $data = CRLParser::parseData($data);
+                        foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
+                            if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
+                                $cert['revocationDate'] <= time()
+                            ) {
+                                return true;
+                            }
+                        }
+                    } catch (\Exception $ignore) {
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    /**
+     * Check if the certificate signature is valid
+     *
+     * @param array $trustedCAs array of strings where each string is a CA certificate
+     * @return boolean
+     */
+    public function isSignatureValid(array $trustedCAs = [])
+    {
+        if (!is_callable('\openssl_verify')) {
+            throw new CertificateException('OpenSSL not found');
+        }
+        if (!in_array($this->sign['algorithm']['algorithm'], openssl_get_md_methods(true))) {
+            throw new CertificateException('Unsupported algorithm');
+        }
+        foreach ($trustedCAs as $ca) {
+            $ca = static::fromString($ca, false);
+            if ($ca->cert['extensions']['subjectKeyIdentifier'] === $this->cert['extensions']['authorityKeyIdentifier'][0]) {
+                return \openssl_verify(
+                    $this->sign['subject'],
+                    substr($this->sign['signature'], 1),
+                    $ca->getPublicKey(),
+                    $this->sign['algorithm']['algorithm']
+                ) === 1;
+            }
+        }
+        return false;
     }
 }
