@@ -675,7 +675,7 @@ class Certificate
      */
     public function isExpired() : bool
     {
-        return time() >= $this->cert['validity']['notBefore'] && time() <= $this->cert['validity']['notAfter'];
+        return time() < $this->cert['validity']['notBefore'] || time() > $this->cert['validity']['notAfter'];
     }
     /**
      * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
