@@ -37,6 +37,8 @@ $certStr = new \vakata\certificate\Certificate::fromString("x509 formatted strin
 $certFile = \vakata\certificate\Certificate::fromFile("/path/to/file.crt");
 ```
 
+Certificates can also be validated (by checking expiration dates, CRLs and validating the certificate signature). Keep in mind signature verification is implemented using the OpenSSL PHP extension.
+
 Read more in the [API docs](docs/README.md)
 
 ## Testing
