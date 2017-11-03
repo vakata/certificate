@@ -1,242 +1,584 @@
-# vakata\certificate\Certificate
+# vakata\certificate\Certificate  
+
+
+
+
+
 
 
 ## Methods
 
 | Name | Description |
 |------|-------------|
-|[fromRequest](#vakata\certificate\certificatefromrequest)|Create an instance from the client request certificate.|
-|[fromFile](#vakata\certificate\certificatefromfile)|Create an instance from a file.|
-|[fromString](#vakata\certificate\certificatefromstring)|Create an instance from a string.|
-|[__construct](#vakata\certificate\certificate__construct)|Create an instance.|
-|[getData](#vakata\certificate\certificategetdata)|Get the full certificate data.|
-|[getSubjectData](#vakata\certificate\certificategetsubjectdata)|Get the subject data from the certificate.|
-|[getIssuerData](#vakata\certificate\certificategetissuerdata)|Get the issuer data from the certificate.|
-|[isPersonal](#vakata\certificate\certificateispersonal)|Is the certificate personal.|
-|[isProfessional](#vakata\certificate\certificateisprofessional)|Is the certificate professional.|
-|[getLegalPerson](#vakata\certificate\certificategetlegalperson)|Get the legal person if available|
-|[getNaturalPerson](#vakata\certificate\certificategetnaturalperson)|Get the natural person|
-|[getPublicKey](#vakata\certificate\certificategetpublickey)|Get the public key from the certificate|
-|[getSerialNumber](#vakata\certificate\certificategetserialnumber)|Get the certificate's serial number in HEX form|
-
----
-
-
-
-### vakata\certificate\Certificate::fromRequest
-Create an instance from the client request certificate.  
-
-
-```php
-public static function fromRequest () : \vakata\certificate\Certificate    
-```
-
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | [`\vakata\certificate\Certificate`](Certificate.md) | the certificate instance |
-
----
+|[__construct](#certificate__construct)|Create an instance.|
+|[addTrustedCA](#certificateaddtrustedca)|Add a trusted CA (used in signature validation for both certificates and CRLs)|
+|[addTrustedCABundle](#certificateaddtrustedcabundle)|Add trusted CAs as a bundle (used in signature validation for both certificates and CRLs)|
+|[addTrustedCAs](#certificateaddtrustedcas)|Add trusted CA certificates (used in signature validation for both certificates and CRLs)|
+|[fromFile](#certificatefromfile)|Create an instance from a file.|
+|[fromRequest](#certificatefromrequest)|Create an instance from the client request certificate.|
+|[fromString](#certificatefromstring)|Create an instance from a string.|
+|[getCPSPolicies](#certificategetcpspolicies)|Get all certificate policy OIDs related to the CA's Certification Practice Statement as an array of strings|
+|[getData](#certificategetdata)|Get the full certificate data.|
+|[getIssuerData](#certificategetissuerdata)|Get the issuer data from the certificate.|
+|[getLegalPerson](#certificategetlegalperson)|Get the legal person if available|
+|[getNaturalPerson](#certificategetnaturalperson)|Get the natural person|
+|[getPolicies](#certificategetpolicies)|Get all certificate policy OIDs as an array of strings|
+|[getPublicKey](#certificategetpublickey)|Get the public key from the certificate|
+|[getSerialNumber](#certificategetserialnumber)|Get the certificate's serial number in HEX form|
+|[getSubjectData](#certificategetsubjectdata)|Get the subject data from the certificate.|
+|[isExpired](#certificateisexpired)|Is the certificate currently valid - checks notBefore and notAfter dates|
+|[isPersonal](#certificateispersonal)|Is the certificate personal.|
+|[isProfessional](#certificateisprofessional)|Is the certificate professional.|
+|[isRevoked](#certificateisrevoked)|Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number|
+|[isSignatureValid](#certificateissignaturevalid)|Check if the certificate signature is valid|
+|[isValid](#certificateisvalid)|Is the certificate valid, checks currently include dates & signature and CRL list|
 
 
-### vakata\certificate\Certificate::fromFile
-Create an instance from a file.  
 
+
+### Certificate::__construct  
+
+**Description**
 
 ```php
-public static function fromFile (  
-    string $file  
-) : \vakata\certificate\Certificate    
+public __construct (string $cert, bool $requirePerson)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-| `$file` | `string` | the path to the certificate file to parse |
-|  |  |  |
-| `return` | [`\vakata\certificate\Certificate`](Certificate.md) | the certificate instance |
+Create an instance. 
 
----
+ 
+
+**Parameters**
+
+* `(string) $cert`
+: the certificate to parse  
+* `(bool) $requirePerson`
+: must the certificate contain a person (defaults to true)  
+
+**Return Values**
 
 
-### vakata\certificate\Certificate::fromString
-Create an instance from a string.  
 
+
+### Certificate::addTrustedCA  
+
+**Description**
 
 ```php
-public static function fromString (  
-    string $data  
-) : \vakata\certificate\Certificate    
+public addTrustedCA (string $cert)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-| `$data` | `string` | the certificate |
-|  |  |  |
-| `return` | [`\vakata\certificate\Certificate`](Certificate.md) | the certificate instance |
+Add a trusted CA (used in signature validation for both certificates and CRLs) 
 
----
+ 
+
+**Parameters**
+
+* `(string) $cert`
+
+**Return Values**
+
+`$this`
 
 
-### vakata\certificate\Certificate::__construct
-Create an instance.  
 
+
+
+### Certificate::addTrustedCABundle  
+
+**Description**
 
 ```php
-public function __construct (  
-    string $cert  
-)   
+public addTrustedCABundle (string $certs)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-| `$cert` | `string` | the certificate to parse |
+Add trusted CAs as a bundle (used in signature validation for both certificates and CRLs) 
 
----
+ 
+
+**Parameters**
+
+* `(string) $certs`
+: a bundle of CA certificates (the same used in Apache config)  
+
+**Return Values**
+
+`$this`
 
 
-### vakata\certificate\Certificate::getData
-Get the full certificate data.  
 
+
+
+### Certificate::addTrustedCAs  
+
+**Description**
 
 ```php
-public function getData () : array    
+public addTrustedCAs (array $certs)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `array` | the certificate data |
+Add trusted CA certificates (used in signature validation for both certificates and CRLs) 
 
----
+ 
+
+**Parameters**
+
+* `(array) $certs`
+: an array of strings where each string is a CA certificate  
+
+**Return Values**
+
+`$this`
 
 
-### vakata\certificate\Certificate::getSubjectData
-Get the subject data from the certificate.  
 
+
+
+### Certificate::fromFile  
+
+**Description**
 
 ```php
-public function getSubjectData () : array    
+public static fromFile (string $file, bool $requirePerson)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `array` | the certificate subject data |
+Create an instance from a file. 
 
----
+ 
+
+**Parameters**
+
+* `(string) $file`
+: the path to the certificate file to parse  
+* `(bool) $requirePerson`
+: must the certificate contain a person (defaults to true)  
+
+**Return Values**
+
+`\vakata\certificate\Certificate`
+
+> the certificate instance  
 
 
-### vakata\certificate\Certificate::getIssuerData
-Get the issuer data from the certificate.  
 
+
+### Certificate::fromRequest  
+
+**Description**
 
 ```php
-public function getIssuerData () : array    
+public static fromRequest (bool $requirePerson)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `array` | the certificate subject data |
+Create an instance from the client request certificate. 
 
----
+ 
+
+**Parameters**
+
+* `(bool) $requirePerson`
+: must the certificate contain a person (defaults to true)  
+
+**Return Values**
+
+`\vakata\certificate\Certificate`
+
+> the certificate instance  
 
 
-### vakata\certificate\Certificate::isPersonal
-Is the certificate personal.  
 
+
+### Certificate::fromString  
+
+**Description**
 
 ```php
-public function isPersonal () : boolean    
+public static fromString (string $data, bool $requirePerson)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `boolean` |  |
+Create an instance from a string. 
 
----
+ 
+
+**Parameters**
+
+* `(string) $data`
+: the certificate  
+* `(bool) $requirePerson`
+: must the certificate contain a person (defaults to true)  
+
+**Return Values**
+
+`\vakata\certificate\Certificate`
+
+> the certificate instance  
 
 
-### vakata\certificate\Certificate::isProfessional
-Is the certificate professional.  
 
+
+### Certificate::getCPSPolicies  
+
+**Description**
 
 ```php
-public function isProfessional () : boolean    
+public getCPSPolicies (void)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `boolean` |  |
+Get all certificate policy OIDs related to the CA's Certification Practice Statement as an array of strings 
 
----
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`array`
 
 
-### vakata\certificate\Certificate::getLegalPerson
-Get the legal person if available  
 
+
+
+### Certificate::getData  
+
+**Description**
 
 ```php
-public function getLegalPerson () : \LegalPerson, null    
+public getData (void)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `\LegalPerson`, `null` |  |
+Get the full certificate data. 
 
----
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`array`
+
+> the certificate data  
 
 
-### vakata\certificate\Certificate::getNaturalPerson
-Get the natural person  
 
+
+### Certificate::getIssuerData  
+
+**Description**
 
 ```php
-public function getNaturalPerson () : \NaturalPerson, null    
+public getIssuerData (void)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `\NaturalPerson`, `null` |  |
+Get the issuer data from the certificate. 
 
----
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`array`
+
+> the certificate subject data  
 
 
-### vakata\certificate\Certificate::getPublicKey
-Get the public key from the certificate  
 
+
+### Certificate::getLegalPerson  
+
+**Description**
 
 ```php
-public function getPublicKey (  
-    bool $pemEncoded  
-) : string    
+public getLegalPerson (void)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-| `$pemEncoded` | `bool` | should the result be pem encoded or raw binary, defaults to true |
-|  |  |  |
-| `return` | `string` |  |
+Get the legal person if available 
 
----
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`\LegalPerson|null`
 
 
-### vakata\certificate\Certificate::getSerialNumber
-Get the certificate's serial number in HEX form  
 
+
+
+### Certificate::getNaturalPerson  
+
+**Description**
 
 ```php
-public function getSerialNumber () : string    
+public getNaturalPerson (void)
 ```
 
-|  | Type | Description |
-|-----|-----|-----|
-|  |  |  |
-| `return` | `string` |  |
+Get the natural person 
 
----
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`\NaturalPerson|null`
+
+
+
+
+
+### Certificate::getPolicies  
+
+**Description**
+
+```php
+public getPolicies (void)
+```
+
+Get all certificate policy OIDs as an array of strings 
+
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`array`
+
+
+
+
+
+### Certificate::getPublicKey  
+
+**Description**
+
+```php
+public getPublicKey (bool $pemEncoded)
+```
+
+Get the public key from the certificate 
+
+ 
+
+**Parameters**
+
+* `(bool) $pemEncoded`
+: should the result be pem encoded or raw binary, defaults to true  
+
+**Return Values**
+
+`string`
+
+
+
+
+
+### Certificate::getSerialNumber  
+
+**Description**
+
+```php
+public getSerialNumber (void)
+```
+
+Get the certificate's serial number in HEX form 
+
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`string`
+
+
+
+
+
+### Certificate::getSubjectData  
+
+**Description**
+
+```php
+public getSubjectData (void)
+```
+
+Get the subject data from the certificate. 
+
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`array`
+
+> the certificate subject data  
+
+
+
+
+### Certificate::isExpired  
+
+**Description**
+
+```php
+public isExpired (void)
+```
+
+Is the certificate currently valid - checks notBefore and notAfter dates 
+
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`bool`
+
+
+
+
+
+### Certificate::isPersonal  
+
+**Description**
+
+```php
+public isPersonal (void)
+```
+
+Is the certificate personal. 
+
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`boolean`
+
+
+
+
+
+### Certificate::isProfessional  
+
+**Description**
+
+```php
+public isProfessional (void)
+```
+
+Is the certificate professional. 
+
+ 
+
+**Parameters**
+
+`This function has no parameters.`
+
+**Return Values**
+
+`boolean`
+
+
+
+
+
+### Certificate::isRevoked  
+
+**Description**
+
+```php
+public isRevoked (bool $validateSignature)
+```
+
+Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number 
+
+ 
+
+**Parameters**
+
+* `(bool) $validateSignature`
+: should the signature on the CRL be verified (defaults to true)  
+
+**Return Values**
+
+`bool`
+
+
+
+
+
+### Certificate::isSignatureValid  
+
+**Description**
+
+```php
+public isSignatureValid (bool $allowSelfSigned)
+```
+
+Check if the certificate signature is valid 
+
+ 
+
+**Parameters**
+
+* `(bool) $allowSelfSigned`
+: should self signed certificates be accepted (defaults to false)  
+
+**Return Values**
+
+`boolean`
+
+
+
+
+
+### Certificate::isValid  
+
+**Description**
+
+```php
+public isValid (bool $allowSelfSigned)
+```
+
+Is the certificate valid, checks currently include dates & signature and CRL list 
+
+ 
+
+**Parameters**
+
+* `(bool) $allowSelfSigned`
+: should self signed certificates be accepted (defaults to false)  
+
+**Return Values**
+
+`bool`
+
+
+
 
