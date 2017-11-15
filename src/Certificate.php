@@ -377,10 +377,18 @@ class Certificate
                 break;
             case 'INFONOTARY':
                 if (in_array($pro, ['1.1.1.1', '1.1.1.3', '1.1.2.1', '1.1.2.3'])) {
-                    $original = $cert['extensions']['subjectAltName'][0][0] ?? [];
+                    $altName = $this->cert['extensions']['subjectAltName'];
+                    $original = isset($altName[0][0]) && is_array($altName[0][0]) ? $altName[0][0] : ($altName[0]??[]);
                     $compacted = [];
                     foreach ($original as $item) {
-                        $compacted[$item[0]] = $item[1];
+                        if (is_array($item) && count($item)) {
+                            if (count($item) === 1) {
+                                $item = $item[0];
+                            }
+                            if (count($item) > 1) {
+                                $compacted[$item[0]] = $item[1];
+                            }
+                        }
                     }
                     if (count($compacted)) {
                         if (isset($compacted['2.5.4.3.100.1.1'])) {
@@ -546,10 +554,18 @@ class Certificate
      */
     public function getSubjectData() : array
     {
-        $original = $this->cert['extensions']['subjectAltName'][0][0] ?? [];
+        $altName = $this->cert['extensions']['subjectAltName'];
+        $original = isset($altName[0][0]) && is_array($altName[0][0]) ? $altName[0][0] : ($altName[0] ?? []);
         $compacted = [];
         foreach ($original as $item) {
-            $compacted[$item[0]] = $item[1];
+            if (is_array($item) && count($item)) {
+                if (count($item) === 1) {
+                    $item = $item[0];
+                }
+                if (count($item) > 1) {
+                    $compacted[$item[0]] = $item[1];
+                }
+            }
         }
         return array_merge($compacted, $this->cert['subject']);
     }
