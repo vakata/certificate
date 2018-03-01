@@ -377,8 +377,10 @@ class Certificate
                 break;
             case 'INFONOTARY':
                 if (in_array($pro, ['1.1.1.1', '1.1.1.3', '1.1.2.1', '1.1.2.3'])) {
-                    $altName = $this->cert['extensions']['subjectAltName'];
-                    $original = isset($altName[0][0]) && is_array($altName[0][0]) ? $altName[0][0] : ($altName[0]??[]);
+                    $altName = $this->cert['extensions']['subjectAltName'] ?? [];
+                    $original = isset($altName[0]) && isset($altName[0][0]) && is_array($altName[0][0]) ?
+                        $altName[0][0] :
+                        ($altName[0] ?? []);
                     $compacted = [];
                     foreach ($original as $item) {
                         if (is_array($item) && count($item)) {
@@ -554,8 +556,10 @@ class Certificate
      */
     public function getSubjectData() : array
     {
-        $altName = $this->cert['extensions']['subjectAltName'];
-        $original = isset($altName[0][0]) && is_array($altName[0][0]) ? $altName[0][0] : ($altName[0] ?? []);
+        $altName = $this->cert['extensions']['subjectAltName'] ?? [];
+        $original = isset($altName[0]) && isset($altName[0][0]) && is_array($altName[0][0]) ?
+            $altName[0][0] :
+            ($altName[0] ?? []);
         $compacted = [];
         foreach ($original as $item) {
             if (is_array($item) && count($item)) {
