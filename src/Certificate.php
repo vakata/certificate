@@ -5,12 +5,14 @@ namespace vakata\certificate;
 use vakata\asn1\ASN1 as ASN1;
 use vakata\asn1\Certificate as Parser;
 use vakata\asn1\CRL as CRLParser;
+use vakata\asn1\OCSP as OCSP;
 
 class Certificate
 {
     protected $cert;
     protected $data;
     protected $sign;
+    protected $meta;
     protected $naturalPerson;
     protected $legalPerson;
     protected $trustedCAs = [];
@@ -60,6 +62,7 @@ class Certificate
         $this->data          = $cert;
         $this->cert          = $temp['cert'];
         $this->sign          = $temp['sign'];
+        $this->meta          = Parser::parseData($cert, true);
         $this->naturalPerson = $this->parseNaturalPerson($this->cert);
         $this->legalPerson   = $this->parseLegalPerson($this->cert);
         if ($this->naturalPerson === null) {
@@ -682,7 +685,44 @@ class Certificate
         }
         return $policies;
     }
-
+    /**
+     * Get all certificate policy OIDs
+     *
+     * @return array
+     */
+    public function getCertificatePolicies() : array
+    {
+        $policies = [];
+        foreach (
+            new \RecursiveIteratorIterator(
+                new \RecursiveArrayIterator($this->cert['extensions']['certificatePolicies'] ?? [])
+            ) as $v
+        ) {
+            if (preg_match('(^(\d+\.?)+$)', $v)) {
+                $policies[] = $v;
+            }
+        }
+        return $policies;
+    }
+    /**
+     * Get all qualified certificate statements (as OIDs)
+     *
+     * @return array
+     */
+    public function getQcStatements() : array
+    {
+        $policies = [];
+        foreach (
+            new \RecursiveIteratorIterator(
+                new \RecursiveArrayIterator($this->cert['extensions']['qcStatements'] ?? [])
+            ) as $v
+        ) {
+            if (preg_match('(^(\d+\.?)+$)', $v)) {
+                $policies[] = $v;
+            }
+        }
+        return $policies;
+    }
     /**
      * Get all certificate policy OIDs related to the CA's Certification Practice Statement as an array of strings
      *
@@ -724,7 +764,7 @@ class Certificate
         if (!isset($cert->cert['extensions']['subjectKeyIdentifier'])) {
             throw new CertificateException('Missing CA subjectKeyIdentifier');
         }
-        $this->trustedCAs[$cert->cert['extensions']['subjectKeyIdentifier']] = $cert->getPublicKey();
+        $this->trustedCAs[$cert->cert['extensions']['subjectKeyIdentifier']] = $cert;
         return $this;
     }
 
@@ -763,7 +803,9 @@ class Certificate
      */
     public function isValid(bool $allowSelfSigned = false) : bool
     {
-        return !$this->isExpired() && !$this->isRevoked() && $this->isSignatureValid($allowSelfSigned);
+        return !$this->isExpired() &&
+            !$this->isRevoked(true, $allowSelfSigned) &&
+            $this->isSignatureValid($allowSelfSigned);
     }
 
     /**
@@ -782,8 +824,72 @@ class Certificate
      * @param bool $validateSignature should the signature on the CRL be verified (defaults to true)
      * @return bool
      */
-    public function isRevoked(bool $validateSignature = true) : bool
+    public function isRevoked(bool $validateSignature = true, bool $allowSelfSigned = false) : bool
     {
+        // OCSP
+        $ocsp = [];
+        foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
+                $ocsp[] = $loc[1];
+            }
+        }
+        if (count($ocsp)) {
+            if ($this->cert['extensions']['authorityKeyIdentifier'][0] === $this->cert['extensions']['subjectKeyIdentifier']) {
+                if (!$allowSelfSigned) {
+                    return false;
+                }
+                $keyHash = base64_encode(sha1(substr($this->cert['SubjectPublicKeyInfo']['publicKey'], 1), true));
+            } else {
+                if (!isset($this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]])) {
+                    return false;
+                }
+                $keyHash = base64_encode(sha1(substr(
+                    $this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]]->cert['SubjectPublicKeyInfo']['publicKey'],
+                1), true));
+            }
+            $nameHash = base64_encode(sha1($this->meta['value']['tbsCertificate']['value']['issuer']['raw'], true));
+            $ocspRequest = OCSP::generateRequest('sha1', $nameHash, $keyHash, $this->getSerialNumber());
+            foreach ($ocsp as $url) {
+                $response = @file_get_contents($url, null, stream_context_create([
+                    'http' => [
+                        'method' => "POST",
+                        'header' => "".
+                                "Content-Type: application/ocsp-request\r\nContent-Length: " . strlen($ocspRequest) . "\r\n",
+                        'content' => $ocspRequest,
+                        'timeout' => 5,
+                        'follow_location' => 0,
+                        //'ignore_errors' => true
+                    ]
+                ]));
+                if ($response !== false) {
+                    try {
+                        $ocspResponse = OCSP::parseResponse($response);
+                        if ($ocspResponse['responseStatus'] === 'successful') {
+                            // TODO: parse additional certificates
+                            // if ($validateSignature) {
+                            //     // $temp['value']['responseBytes']['value']['response']['value']['value']['tbsResponseData']['raw']
+                            //     if (!$this->validateSignature(
+                            //         substr($response, 34, 151),
+                            //         substr($ocspResponse['responseBytes']['response']['signature'], 0),
+                            //         $pkey,
+                            //         $ocspResponse['responseBytes']['response']['signatureAlgorithm']['algorithm']
+                            //     )) {
+                            //         continue;
+                            //     }
+                            // }
+                            $status = $ocspResponse['responseBytes']['response']['tbsResponseData']['responses'][0]['certStatus'] ?? 'unknown';
+                            if ($status === 'good') {
+                                return false;
+                            }
+                            if ($status === 'revoked') {
+                                return true;
+                            }
+                        }
+                    } catch (\Exception $ignore) {}
+                }
+            }
+        }
+        // CRL
         $points = $this->cert['extensions']['cRLDistributionPoints'] ?? [];
         foreach ($points as $point) {
             if (strpos($point[0], 'http') === 0) {
@@ -816,7 +922,7 @@ class Certificate
                     if (!$this->validateSignature(
                         substr($crl, $temp['contents'][0]['start'], $temp['contents'][0]['length']),
                         substr($data['signatureValue'], 1),
-                        $this->trustedCAs[$keyID],
+                        $this->trustedCAs[$keyID]->getPublicKey(),
                         $data['signatureAlgorithm']['algorithm']
                     )) {
                         throw new CertificateException('CRL has invalid signature');
@@ -856,7 +962,7 @@ class Certificate
         return $this->validateSignature(
             $this->sign['subject'],
             substr($this->sign['signature'], 1),
-            $this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]],
+            $this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]]->getPublicKey(),
             $this->sign['algorithm']['algorithm']
         );
     }
