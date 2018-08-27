@@ -173,9 +173,9 @@ class Certificate
             $temp[$item['extnID']] = $item['extnValue'];
         }
         $data['extensions'] = $temp;
-        if (!isset($data['extensions']['certificatePolicies'])) {
-            throw new CertificateException('Missing certificate policies');
-        }
+        // if (!isset($data['extensions']['certificatePolicies'])) {
+        //     throw new CertificateException('Missing certificate policies');
+        // }
         if (isset($data['extensions']['subjectKeyIdentifier'])) {
             $data['extensions']['subjectKeyIdentifier'] = static::base256toHex(
                 $data['extensions']['subjectKeyIdentifier']
@@ -686,7 +686,7 @@ class Certificate
     public function getPolicies() : array
     {
         $policies = [];
-        $temp = $this->cert['extensions']['certificatePolicies'];
+        $temp = $this->cert['extensions']['certificatePolicies'] ?? [];
         foreach ($temp as $policy) {
             $policies[] = $policy[0];
         }
@@ -738,7 +738,7 @@ class Certificate
     public function getCPSPolicies() : array
     {
         $policies = [];
-        $temp = $this->cert['extensions']['certificatePolicies'];
+        $temp = $this->cert['extensions']['certificatePolicies'] ?? [];
         foreach ($temp as $policy) {
             if (!isset($policy[1])) {
                 continue;
@@ -946,9 +946,6 @@ class Certificate
                         throw new CertificateException('CRL has invalid signature');
                     }
                 //}
-                foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
-                    $this->cachedCRLs[$point[0]][$cert['userCertificate']] = $cert['revocationDate'];
-                }
                 foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
                     if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
                         $cert['revocationDate'] <= time()
