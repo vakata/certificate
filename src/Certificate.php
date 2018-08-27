@@ -197,15 +197,10 @@ class Certificate
             );
         }
         if (isset($data['extensions']['authorityKeyIdentifier'])) {
-            if (isset($data['extensions']['authorityKeyIdentifier'][0])) {
-                $data['extensions']['authorityKeyIdentifier'][0] = static::base256toHex(
-                    $data['extensions']['authorityKeyIdentifier'][0]
-                );
-            }
-            if (isset($data['extensions']['authorityKeyIdentifier'][2])) {
-                $data['extensions']['authorityKeyIdentifier'][2] = static::base256toHex(
-                    $data['extensions']['authorityKeyIdentifier'][2]
-                );
+            foreach ($data['extensions']['authorityKeyIdentifier'] as $k => $v) {
+                if (is_string($v)) {
+                    $data['extensions']['authorityKeyIdentifier'][$k] = static::base256toHex($v);
+                }
             }
         }
         if (strpos($cert, '-BEGIN CERTIFICATE-') !== false) {
@@ -783,7 +778,12 @@ class Certificate
      */
     public function getAuthorityKeyIdentifier()
     {
-        return $this->cert['extensions']['authorityKeyIdentifier'][0] ?? null;
+        foreach ($this->cert['extensions']['authorityKeyIdentifier'] ?? [] as $v) {
+            if (is_string($v)) {
+                return $v;
+            }
+        }
+        return null;
     }
 
     /**
@@ -926,7 +926,12 @@ class Certificate
                     foreach ($data['tbsCertList']['extensions'] as $item) {
                         if ($item['extnID'] === 'authorityKeyIdentifier') {
                             if (is_array($item['extnValue'])) {
-                                $item['extnValue'] = $item['extnValue'][0];
+                                foreach ($item['extnValue'] as $v) {
+                                    if (is_string($v)) {
+                                        $item['extnValue'] = $v;
+                                        break;
+                                    }
+                                }
                             }
                             $keyID = static::base256toHex($item['extnValue']);
                         }
@@ -1012,7 +1017,7 @@ class Certificate
      */
     public function isSelfSigned()
     {
-        return $this->cert['extensions']['authorityKeyIdentifier'][0] === $this->cert['extensions']['subjectKeyIdentifier'];
+        return $this->getAuthorityKeyIdentifier() === $this->getSubjectKeyIdentifier();
     }
 
     /**
