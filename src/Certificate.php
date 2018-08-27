@@ -13,9 +13,9 @@ class Certificate
     protected $data;
     protected $sign;
     protected $meta;
-    protected $naturalPerson;
-    protected $legalPerson;
-    protected $caCertificate;
+    protected $naturalPerson = null;
+    protected $legalPerson = null;
+    protected $caCertificate = null;
 
     /**
      * Create an instance from the client request certificate.
@@ -66,7 +66,13 @@ class Certificate
         }
     }
 
-    public function addCA(Certificate $cert)
+    /**
+     * Set the CA certificate used to issue the current certificate (used for signature validation)
+     *
+     * @param Certificate $cert
+     * @return $this
+     */
+    public function setCA(Certificate $cert)
     {
         if ($cert->getSubjectKeyIdentifier() !== $this->getAuthorityKeyIdentifier()) {
             throw new CertificateException('This is not the authority that issued this certificate');
@@ -78,6 +84,15 @@ class Certificate
         return $this;
     }
 
+    /**
+     * Get the CA certificate used to issue the current certificate.
+     *
+     * @return Certificate|null
+     */
+    public function getCA()
+    {
+        return $this->caCertificate;
+    }
 
     /**
      * Convert base256 to hex format
@@ -808,10 +823,9 @@ class Certificate
     /**
      * Is the certificate revoked - checks the OCSP endpoints (if any)
      *
-     * @param array $ca optional array of certificate objects to validate the signature of the response against
      * @return bool
      */
-    public function isRevokedOCSP(array $ca = []) : bool
+    public function isRevokedOCSP() : bool
     {
         $ocsp = [];
         foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
@@ -832,9 +846,6 @@ class Certificate
             }
             $nameHash = base64_encode(sha1($this->meta['value']['tbsCertificate']['value']['issuer']['raw'], true));
             $ocspRequest = OCSP::generateRequest('sha1', $nameHash, $keyHash, $this->getSerialNumber());
-            if ($this->caCertificate) {
-                $ca[] = $this->caCertificate;
-            }
             foreach ($ocsp as $url) {
                 $response = @file_get_contents($url, null, stream_context_create([
                     'http' => [
@@ -857,10 +868,10 @@ class Certificate
                             }
                             foreach ($certs as $k => $cert) {
                                 if (isset($certs[$k + 1])) {
-                                    $cert->addCA($certs[$k + 1]);
+                                    $cert->setCA($certs[$k + 1]);
                                 } else {
                                     if ($this->caCertificate) {
-                                        $cert->addCA($this->caCertificate);
+                                        $cert->setCA($this->caCertificate);
                                     }
                                 }
                                 if ($cert->isExpired() || !$cert->isSignatureValid()) {
@@ -926,6 +937,9 @@ class Certificate
                     if ($this->caCertificate) {
                         $ca[] = $this->caCertificate;
                     }
+                    if ($this->isSelfSigned()) {
+                        $ca[] = $this;
+                    }
                     $found = null;
                     foreach ($ca as $cert) {
                         if ($cert->getSubjectKeyIdentifier() === $keyID) {
@@ -966,11 +980,11 @@ class Certificate
      */
     public function isRevoked(array $ca = []) : bool
     {
-        return $this->isRevokedOCSP($ca) || $this->isRevokedCRL($ca);
+        return $this->isRevokedOCSP() || $this->isRevokedCRL($ca);
     }
 
     /**
-     * Is the certificate signature valid (make sure to invoke addCA if certificate is not self signed)
+     * Is the certificate signature valid (make sure to invoke setCA if certificate is not self signed)
      *
      * @return boolean
      */
