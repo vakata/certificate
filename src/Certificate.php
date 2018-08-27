@@ -15,48 +15,44 @@ class Certificate
     protected $meta;
     protected $naturalPerson;
     protected $legalPerson;
-    protected $trustedCAs = [];
+    protected $caCertificate;
 
     /**
      * Create an instance from the client request certificate.
      * 
-     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      * @return \vakata\certificate\Certificate      the certificate instance
      * @codeCoverageIgnore
      */
-    public static function fromRequest(bool $requirePerson = true) : Certificate
+    public static function fromRequest() : Certificate
     {
-        return new static($_SERVER['SSL_CLIENT_CERT'], $requirePerson);
+        return new static($_SERVER['SSL_CLIENT_CERT']);
     }
 
     /**
      * Create an instance from a file.
      * @param  string   $file the path to the certificate file to parse
-     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      * @return \vakata\certificate\Certificate      the certificate instance
      */
-    public static function fromFile(string $file, bool $requirePerson = true) : Certificate
+    public static function fromFile(string $file) : Certificate
     {
-        return new static(file_get_contents($file), $requirePerson);
+        return new static(file_get_contents($file));
     }
 
     /**
      * Create an instance from a string.
      * @param  string   $data the certificate
-     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      * @return \vakata\certificate\Certificate      the certificate instance
      */
-    public static function fromString(string $data, bool $requirePerson = true) : Certificate
+    public static function fromString(string $data) : Certificate
     {
-        return new static($data, $requirePerson);
+        return new static($data);
     }
 
     /**
      * Create an instance.
      * @param  string      $cert the certificate to parse
-     * @param  bool $requirePerson                  must the certificate contain a person (defaults to true)
      */
-    public function __construct(string $cert, bool $requirePerson = true)
+    public function __construct(string $cert)
     {
         $temp = $this->parseCertificate($cert);
         $this->data          = $cert;
@@ -68,11 +64,20 @@ class Certificate
         if ($this->naturalPerson === null) {
             list($this->naturalPerson, $this->legalPerson) = $this->parseLegacyCertificate($this->cert);
         }
-        // Allowing certificates with no natural person because of infonotary certificates
-        if ($requirePerson && $this->naturalPerson === null && $this->legalPerson === null) {
-            throw new CertificateException('Missing natural or legal person data');
-        }
     }
+
+    public function addCA(Certificate $cert)
+    {
+        if ($cert->getSubjectKeyIdentifier() !== $this->getAuthorityKeyIdentifier()) {
+            throw new CertificateException('This is not the authority that issued this certificate');
+        }
+        if ($cert->isExpired()) {
+            throw new CertificateException('Authority certificate expired');
+        }
+        $this->caCertificate = $cert;
+        return $this;
+    }
+
 
     /**
      * Convert base256 to hex format
@@ -545,10 +550,48 @@ class Certificate
     }
 
     /**
+     * Is there a natural person in the certificate
+     *
+     * @return boolean
+     */
+    public function hasNaturalPerson() : bool
+    {
+        return $this->naturalPerson !== null;
+    }
+
+    /**
+     * Get the natural person
+     * @return NaturalPerson|null
+     */
+    public function getNaturalPerson()
+    {
+        return $this->naturalPerson;
+    }
+
+    /**
+     * Is there a legal person in the certificate
+     *
+     * @return boolean
+     */
+    public function hasLegalPerson() : bool
+    {
+        return $this->legalPerson !== null;
+    }
+
+    /**
+     * Get the legal person if available
+     * @return LegalPerson|null
+     */
+    public function getLegalPerson()
+    {
+        return $this->legalPerson;
+    }
+
+    /**
      * Get the full certificate data.
      * @return array  the certificate data
      */
-    public function getData()
+    public function getData() : array
     {
         return $this->cert;
     }
@@ -581,47 +624,11 @@ class Certificate
      * Get the issuer data from the certificate.
      * @return array  the certificate subject data
      */
-    public function getIssuerData()
+    public function getIssuerData() : array
     {
         return $this->cert['issuer'];
     }
     
-    /**
-     * Is the certificate personal.
-     * @return boolean
-     */
-    public function isPersonal()
-    {
-        return !$this->isProfessional();
-    }
-
-    /**
-     * Is the certificate professional.
-     * @return boolean
-     */
-    public function isProfessional()
-    {
-        return $this->legalPerson !== null;
-    }
-
-    /**
-     * Get the legal person if available
-     * @return LegalPerson|null
-     */
-    public function getLegalPerson()
-    {
-        return $this->legalPerson;
-    }
-
-    /**
-     * Get the natural person
-     * @return NaturalPerson|null
-     */
-    public function getNaturalPerson()
-    {
-        return $this->naturalPerson;
-    }
-
     /**
      * Get the public key from the certificate
      *
@@ -746,66 +753,22 @@ class Certificate
     }
 
     /**
-     * Add a trusted CA (used in signature validation for both certificates and CRLs)
+     * Get the subject key identifier (if available)
      *
-     * @param string $cert
-     * @return $this
+     * @return string|null
      */
-    public function addTrustedCA(string $cert)
+    public function getSubjectKeyIdentifier()
     {
-        try {
-            $cert = static::fromString($cert, false);
-        } catch (\Exception $e) {
-            throw new CertificateException('Invalid CA certificate');
-        }
-        if ($cert->isExpired()) {
-            throw new CertificateException('Expired CA certificate');
-        }
-        if (!isset($cert->cert['extensions']['subjectKeyIdentifier'])) {
-            throw new CertificateException('Missing CA subjectKeyIdentifier');
-        }
-        $this->trustedCAs[$cert->cert['extensions']['subjectKeyIdentifier']] = $cert;
-        return $this;
+        return $this->cert['extensions']['subjectKeyIdentifier'] ?? null;
     }
-
     /**
-     * Add trusted CA certificates (used in signature validation for both certificates and CRLs)
+     * Get the authority key identifier (if available)
      *
-     * @param array $certs an array of strings where each string is a CA certificate
-     * @return $this
+     * @return string|null
      */
-    public function addTrustedCAs(array $certs)
+    public function getAuthorityKeyIdentifier()
     {
-        foreach ($certs as $cert) {
-            $this->addTrustedCA($cert);
-        }
-        return $this;
-    }
-
-    /**
-     * Add trusted CAs as a bundle (used in signature validation for both certificates and CRLs)
-     *
-     * @param string $certs a bundle of CA certificates (the same used in Apache config)
-     * @return $this
-     */
-    public function addTrustedCABundle(string $certs)
-    {
-        $certs = explode('-----END CERTIFICATE-----', $certs);
-        unset($certs[count($certs) - 1]);
-        return $this->addTrustedCAs($certs);
-    }
-
-    /**
-     * Is the certificate valid, checks currently include dates & signature and CRL list
-     *
-     * @param bool $allowSelfSigned should self signed certificates be accepted (defaults to false)
-     * @return bool
-     */
-    public function isValid(bool $allowSelfSigned = false) : bool
-    {
-        return !$this->isExpired() &&
-            !$this->isRevoked(true, $allowSelfSigned) &&
-            $this->isSignatureValid($allowSelfSigned);
+        return $this->cert['extensions']['authorityKeyIdentifier'][0] ?? null;
     }
 
     /**
@@ -817,16 +780,39 @@ class Certificate
     {
         return time() < $this->cert['validity']['notBefore'] || time() > $this->cert['validity']['notAfter'];
     }
-
     /**
-     * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
+     * Is there an OCSP endpoint
      *
-     * @param bool $validateSignature should the signature on the CRL be verified (defaults to true)
      * @return bool
      */
-    public function isRevoked(bool $validateSignature = true, bool $allowSelfSigned = false) : bool
+    public function hasOCSP() : bool
     {
-        // OCSP
+        $ocsp = [];
+        foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * Are there any CRL distribution points
+     *
+     * @return bool
+     */
+    public function hasCRL() : bool
+    {
+        return count($this->cert['extensions']['cRLDistributionPoints'] ?? []) > 0;
+    }
+
+    /**
+     * Is the certificate revoked - checks the OCSP endpoints (if any)
+     *
+     * @param array $ca optional array of certificate objects to validate the signature of the response against
+     * @return bool
+     */
+    public function isRevokedOCSP(array $ca = []) : bool
+    {
         $ocsp = [];
         foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
             if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
@@ -834,21 +820,21 @@ class Certificate
             }
         }
         if (count($ocsp)) {
-            if ($this->cert['extensions']['authorityKeyIdentifier'][0] === $this->cert['extensions']['subjectKeyIdentifier']) {
-                if (!$allowSelfSigned) {
-                    return false;
-                }
+            if ($this->isSelfSigned()) {
                 $keyHash = base64_encode(sha1(substr($this->cert['SubjectPublicKeyInfo']['publicKey'], 1), true));
             } else {
-                if (!isset($this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]])) {
-                    return false;
+                if (!$this->caCertificate) {
+                    throw new CertificateException('Missing CA certificate');
                 }
                 $keyHash = base64_encode(sha1(substr(
-                    $this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]]->cert['SubjectPublicKeyInfo']['publicKey'],
+                    $this->caCertificate->cert['SubjectPublicKeyInfo']['publicKey'],
                 1), true));
             }
             $nameHash = base64_encode(sha1($this->meta['value']['tbsCertificate']['value']['issuer']['raw'], true));
             $ocspRequest = OCSP::generateRequest('sha1', $nameHash, $keyHash, $this->getSerialNumber());
+            if ($this->caCertificate) {
+                $ca[] = $this->caCertificate;
+            }
             foreach ($ocsp as $url) {
                 $response = @file_get_contents($url, null, stream_context_create([
                     'http' => [
@@ -865,18 +851,31 @@ class Certificate
                     try {
                         $ocspResponse = OCSP::parseResponse($response);
                         if ($ocspResponse['responseStatus'] === 'successful') {
-                            // TODO: parse additional certificates
-                            // if ($validateSignature) {
-                            //     // $temp['value']['responseBytes']['value']['response']['value']['value']['tbsResponseData']['raw']
-                            //     if (!$this->validateSignature(
-                            //         substr($response, 34, 151),
-                            //         substr($ocspResponse['responseBytes']['response']['signature'], 0),
-                            //         $pkey,
-                            //         $ocspResponse['responseBytes']['response']['signatureAlgorithm']['algorithm']
-                            //     )) {
-                            //         continue;
-                            //     }
-                            // }
+                            $certs = [];
+                            foreach ($ocspResponse['responseBytes']['response']['certs'] as $cert) {
+                                $certs[] = static::fromString($cert);
+                            }
+                            foreach ($certs as $k => $cert) {
+                                if (isset($certs[$k + 1])) {
+                                    $cert->addCA($certs[$k + 1]);
+                                } else {
+                                    if ($this->caCertificate) {
+                                        $cert->addCA($this->caCertificate);
+                                    }
+                                }
+                                if ($cert->isExpired() || !$cert->isSignatureValid()) {
+                                    throw new CertificateException('Response has invalid certificates');
+                                }
+                            }
+                            $validateAgainst = $certs[0] ?? $this->caCertificate ?? $this;
+                            if (!$this->validateSignature(
+                                OCSP::parseResponseSubject($response),
+                                substr($ocspResponse['responseBytes']['response']['signature'], 1),
+                                $validateAgainst->getPublicKey(),
+                                $ocspResponse['responseBytes']['response']['signatureAlgorithm']['algorithm']
+                            )) {
+                                throw new CertificateException('Response has invalid signature');
+                            }
                             $status = $ocspResponse['responseBytes']['response']['tbsResponseData']['responses'][0]['certStatus'] ?? 'unknown';
                             if ($status === 'good') {
                                 return false;
@@ -889,7 +888,16 @@ class Certificate
                 }
             }
         }
-        // CRL
+        return false;
+    }
+    /**
+     * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
+     *
+     * @param array $ca optional array of certificate objects to validate the signature of the CRL against
+     * @return bool
+     */
+    public function isRevokedCRL(array $ca = []) : bool
+    {
         $points = $this->cert['extensions']['cRLDistributionPoints'] ?? [];
         foreach ($points as $point) {
             if (strpos($point[0], 'http') === 0) {
@@ -902,7 +910,7 @@ class Certificate
                 } catch (\Exception $e) {
                     throw new CertificateException('Could not parse CRL');
                 }
-                if ($validateSignature) {
+                //if (count($ca)) {
                     $keyID = null;
                     foreach ($data['tbsCertList']['extensions'] as $item) {
                         if ($item['extnID'] === 'authorityKeyIdentifier') {
@@ -915,18 +923,31 @@ class Certificate
                     if (!$keyID) {
                         throw new CertificateException('CRL is missing authorityKeyIdentifier');
                     }
-                    if (!isset($this->trustedCAs[$keyID])) {
+                    if ($this->caCertificate) {
+                        $ca[] = $this->caCertificate;
+                    }
+                    $found = null;
+                    foreach ($ca as $cert) {
+                        if ($cert->getSubjectKeyIdentifier() === $keyID) {
+                            $found = $cert;
+                            break;
+                        }
+                    }
+                    if (!$found) {
                         throw new CertificateException('CA not found');
                     }
                     $temp = ASN1::decodeDER($crl, null, true);
                     if (!$this->validateSignature(
                         substr($crl, $temp['contents'][0]['start'], $temp['contents'][0]['length']),
                         substr($data['signatureValue'], 1),
-                        $this->trustedCAs[$keyID]->getPublicKey(),
+                        $found->getPublicKey(),
                         $data['signatureAlgorithm']['algorithm']
                     )) {
                         throw new CertificateException('CRL has invalid signature');
                     }
+                //}
+                foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
+                    $this->cachedCRLs[$point[0]][$cert['userCertificate']] = $cert['revocationDate'];
                 }
                 foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
                     if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
@@ -941,29 +962,55 @@ class Certificate
     }
 
     /**
-     * Check if the certificate signature is valid
-     * 
-     * @param bool $allowSelfSigned should self signed certificates be accepted (defaults to false)
+     * Is the certificate revoked - checks both OCSP endpoints and CRL distribution points
+     *
+     * @param array $ca optional array of certificate objects to validate the signature of the CRL against
+     * @return bool
+     */
+    public function isRevoked(array $ca = []) : bool
+    {
+        return $this->isRevokedOCSP($ca) || $this->isRevokedCRL($ca);
+    }
+
+    /**
+     * Is the certificate signature valid (make sure to invoke addCA if certificate is not self signed)
+     *
      * @return boolean
      */
-    public function isSignatureValid(bool $allowSelfSigned = false)
+    public function isSignatureValid() : bool
     {
-        if ($this->cert['extensions']['authorityKeyIdentifier'][0] === $this->cert['extensions']['subjectKeyIdentifier']) {
-            return $allowSelfSigned && $this->validateSignature(
+        if ($this->isSelfSigned()) {
+            return $this->validateSignature(
                 $this->sign['subject'],
                 substr($this->sign['signature'], 1),
                 $this->getPublicKey(),
                 $this->sign['algorithm']['algorithm']
             );
         }
-        if (!isset($this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]])) {
-            return false;
-        }
         return $this->validateSignature(
             $this->sign['subject'],
             substr($this->sign['signature'], 1),
-            $this->trustedCAs[$this->cert['extensions']['authorityKeyIdentifier'][0]]->getPublicKey(),
+            $this->caCertificate->getPublicKey(),
             $this->sign['algorithm']['algorithm']
         );
+    }
+    /**
+     * Check if the certificate is self signed
+     * 
+     * @return boolean
+     */
+    public function isSelfSigned()
+    {
+        return $this->cert['extensions']['authorityKeyIdentifier'][0] === $this->cert['extensions']['subjectKeyIdentifier'];
+    }
+
+    /**
+     * Is the certificate valid, checks currently include dates & signature as well as OCSP and CRL list
+     *
+     * @return bool
+     */
+    public function isValid() : bool
+    {
+        return !$this->isExpired() && $this->isSignatureValid() && !$this->isRevoked();
     }
 }
