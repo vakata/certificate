@@ -901,6 +901,27 @@ class Certificate
         }
         return false;
     }
+    public function getCRLPoints() : array
+    {
+        $points = $this->cert['extensions']['cRLDistributionPoints'] ?? [];
+        $result = [];
+        foreach ($points as $point) {
+            if (strpos($point[0], 'http') === 0) {
+                $result[] = $point[0];
+            }
+        }
+        return $result;
+    }
+    public function getOCSPPoints() : array
+    {
+        $ocsp = [];
+        foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
+                $ocsp[] = $loc[1];
+            }
+        }
+        return $ocsp;
+    }
     /**
      * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
      *
