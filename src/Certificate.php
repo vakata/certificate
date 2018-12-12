@@ -2,10 +2,13 @@
 
 namespace vakata\certificate;
 
-use vakata\asn1\ASN1 as ASN1;
-use vakata\asn1\Certificate as Parser;
-use vakata\asn1\CRL as CRLParser;
-use vakata\asn1\OCSP as OCSP;
+use vakata\asn1\ASN1;
+use vakata\asn1\Encoder;
+use vakata\asn1\Decoder;
+use vakata\asn1\structures\Certificate as Parser;
+use vakata\asn1\structures\CRL;
+use vakata\asn1\structures\OCSPRequest;
+use vakata\asn1\structures\OCSPResponse;
 
 class Certificate
 {
@@ -54,11 +57,15 @@ class Certificate
      */
     public function __construct(string $cert)
     {
-        $temp = $this->parseCertificate($cert);
+        if (strpos($cert, '-BEGIN CERTIFICATE-') !== false) {
+            $cert = str_replace(['-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----', "\r", "\n"], '', $cert);
+            $cert = base64_decode($cert);
+        }
         $this->data          = $cert;
+        $temp = $this->parseCertificate($cert);
         $this->cert          = $temp['cert'];
         $this->sign          = $temp['sign'];
-        $this->meta          = Parser::parseData($cert, true);
+        $this->meta          = Decoder::fromString($cert)->structure();
         $this->naturalPerson = $this->parseNaturalPerson($this->cert);
         $this->legalPerson   = $this->parseLegalPerson($this->cert);
         if ($this->naturalPerson === null) {
@@ -124,6 +131,7 @@ class Certificate
         if (!is_callable('\openssl_verify')) {
             throw new CertificateException('OpenSSL not found');
         }
+        $algorithm = ASN1::OIDtoText($algorithm);
         if (!in_array($algorithm, openssl_get_md_methods(true))) {
             throw new CertificateException('Unsupported algorithm');
         }
@@ -144,7 +152,7 @@ class Certificate
     protected function parseCertificate(string $cert) : array
     {
         try {
-            $orig = Parser::parseData($cert);
+            $orig = Parser::fromString($cert)->toArray();
             $data = $orig['tbsCertificate'];
         } catch (\Exception $e) {
             throw new CertificateException('Could not parse certificate');
@@ -191,15 +199,20 @@ class Certificate
         // if (!isset($data['extensions']['certificatePolicies'])) {
         //     throw new CertificateException('Missing certificate policies');
         // }
-        if (isset($data['extensions']['subjectKeyIdentifier'])) {
-            $data['extensions']['subjectKeyIdentifier'] = static::base256toHex(
-                $data['extensions']['subjectKeyIdentifier']
+        $oid = ASN1::TextToOID('subjectKeyIdentifier');
+        if (isset($data['extensions'][$oid])) {
+            if (is_array($data['extensions'][$oid]) && count($data['extensions'][$oid]) === 1) {
+                $data['extensions'][$oid] = $data['extensions'][$oid][0];
+            }
+            $data['extensions'][$oid] = static::base256toHex(
+                $data['extensions'][$oid]
             );
         }
-        if (isset($data['extensions']['authorityKeyIdentifier'])) {
-            foreach ($data['extensions']['authorityKeyIdentifier'] as $k => $v) {
+        $oid = ASN1::TextToOID('authorityKeyIdentifier');
+        if (isset($data['extensions'][$oid])) {
+            foreach ($data['extensions'][$oid] as $k => $v) {
                 if (is_string($v)) {
-                    $data['extensions']['authorityKeyIdentifier'][$k] = static::base256toHex($v);
+                    $data['extensions'][$oid][$k] = static::base256toHex($v);
                 }
             }
         }
@@ -207,13 +220,13 @@ class Certificate
             $cert = str_replace(['-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----', "\r", "\n"], '', $cert);
             $cert = base64_decode($cert);
         }
-        $temp = ASN1::decodeDER($cert, null, true);
+        $temp = Decoder::fromString($this->data)->structure();
         return [
             'cert' => $data,
             'sign' => [
                 'algorithm' => $orig['signatureAlgorithm'],
                 'signature' => $orig['signatureValue'],
-                'subject'   => substr($cert, $temp['contents'][0]['start'], $temp['contents'][0]['length'])
+                'subject'   => substr($this->data, $temp[0]['children'][0]['start'], $temp[0]['children'][0]['length'])
             ]
         ];
     }
@@ -226,17 +239,17 @@ class Certificate
      */
     protected function parseNaturalPerson(array $cert)
     {
-        $natural = $cert['subject']['serialNumber'] ?? null;
+        $natural = $cert['subject'][ASN1::TextToOID('serialNumber')] ?? null;
         $temp = [];
         if (isset($natural) &&
             preg_match('((PAS|IDC|PNO|TAX|TIN|[A-Z]{2}\:)([A-Z]{2})\-(.*))i', $natural, $temp)
         ) {
             return new NaturalPerson(
-                $cert['subject']['commonName'],
+                $cert['subject'][ASN1::TextToOID('commonName')],
                 $temp[1],
                 $temp[3],
                 $temp[2],
-                $cert['subject']['emailAddress'] ?? null,
+                $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                 $this->getSubjectData()
             );
         }
@@ -251,12 +264,12 @@ class Certificate
      */
     protected function parseLegalPerson(array $cert)
     {
-        $legal = $cert['subject']['organizationIdentifier'] ?? null;
+        $legal = $cert['subject'][ASN1::TextToOID('organizationIdentifier')] ?? null;
         if (isset($legal) &&
             preg_match('((VAT|NTR|[A-Z]{2}\:)([A-Z]{2})\-(.*))i', $legal, $temp)
         ) {
             return new LegalPerson(
-                $cert['subject']['organization'],
+                $cert['subject'][ASN1::TextToOID('organization')],
                 $temp[1],
                 $temp[3],
                 $temp[2]
@@ -320,35 +333,35 @@ class Certificate
 
         switch ($iss) {
             case 'STAMPIT':
-                if (in_array($pro, ['1.1.1.5', '1.2.1.3', '1.1.1.1', '1.2.1.2']) && isset($cert['subject']['stateOrProvinceName'])) {
+                if (in_array($pro, ['1.1.1.5', '1.2.1.3', '1.1.1.1', '1.2.1.2']) && isset($cert['subject'][ASN1::TextToOID('stateOrProvinceName')])) {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['stateOrProvinceName'],
+                        [ASN1::TextToOID('stateOrProvinceName')],
                         ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['countryName'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('countryName')] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (in_array($pro, ['1.1.1.1', '1.2.1.2']) && isset($parsed['bulstat']) && $parsed['bulstat']) {
                         $leg = new LegalPerson(
-                            $cert['subject']['organization'],
+                            $cert['subject'][ASN1::TextToOID('organization')],
                             'NTR',
                             $parsed['bulstat'],
                             null
@@ -360,32 +373,32 @@ class Certificate
                 if ($pro === '1.5.1.1') {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['stateOrProvinceName', 'organizationalUnit'],
+                        [ASN1::TextToOID('stateOrProvinceName'), ASN1::TextToOID('organizationalUnit')],
                         ['EGN'=>'egn', 'PID'=>'pid', 'BULSTAT'=>'bulstat']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['countryName'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('countryName')] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['bulstat']) && $parsed['bulstat']) {
                         $leg = new LegalPerson(
-                            $cert['subject']['organization'],
+                            $cert['subject'][ASN1::TextToOID('organization')],
                             'NTR',
                             $parsed['bulstat'],
                             null
@@ -395,11 +408,16 @@ class Certificate
                 break;
             case 'INFONOTARY':
                 if (in_array($pro, ['1.1.1.1', '1.1.1.3', '1.1.2.1', '1.1.2.3'])) {
-                    $altName = $this->cert['extensions']['subjectAltName'] ?? [];
+                    $altName = $this->cert['extensions'][ASN1::TextToOID('subjectAltName')] ?? [];
                     $original = isset($altName[0]) && isset($altName[0][0]) && is_array($altName[0][0]) ?
                         $altName[0][0] :
                         ($altName[0] ?? []);
-                    $compacted = [];
+                    $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
+                        $original[0] :
+                        $original;
+                    $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
+                        $original[0] :
+                        $original;
                     foreach ($original as $item) {
                         if (is_array($item) && count($item)) {
                             if (count($item) === 1) {
@@ -413,11 +431,11 @@ class Certificate
                     if (count($compacted)) {
                         if (isset($compacted['2.5.4.3.100.1.1'])) {
                             $nat = new NaturalPerson(
-                                $cert['subject']['commonName'],
+                                $cert['subject'][ASN1::TextToOID('commonName')],
                                 'PNO',
                                 $compacted['2.5.4.3.100.1.1'],
-                                $compacted['countryOfCitizenship'] ?? 'BG',
-                                $cert['subject']['emailAddress'] ?? null,
+                                $compacted[ASN1::TextToOID('countryOfCitizenship')] ?? 'BG',
+                                $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                                 $this->getSubjectData()
                             );
                         }
@@ -425,7 +443,7 @@ class Certificate
                     if (in_array($pro, ['1.1.2.1', '1.1.2.3'])) {
                         if (isset($cert['subject']['2.5.4.10.100.1.1'])) {
                             $leg = new LegalPerson(
-                                $cert['subject']['organization'],
+                                $cert['subject'][ASN1::TextToOID('organization')],
                                 'NTR',
                                 $cert['subject']['2.5.4.10.100.1.1'],
                                 null
@@ -435,29 +453,29 @@ class Certificate
                 }
                 break;
             case 'SEP':
-                if (in_array($pro, ['1.1.1', '2.5.1', '2.1.1', '2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject']['userid'])) {
-                    $egn = explode('EGN', $cert['subject']['userid'], 2);
+                if (in_array($pro, ['1.1.1', '2.5.1', '2.1.1', '2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject'][ASN1::TextToOID('userid')])) {
+                    $egn = explode('EGN', $cert['subject'][ASN1::TextToOID('userid')], 2);
                     if (count($egn) === 2) {
                         $egn = $egn[1];
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $egn,
-                            $cert['subject']['countryName'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('countryName')] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                 }
-                if (in_array($pro, ['2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject']['organizationalUnit'])) {
-                    $ou = $cert['subject']['organizationalUnit'];
+                if (in_array($pro, ['2.5.2', '2.5.3', '2.1.2', '2.1.3']) && isset($cert['subject'][ASN1::TextToOID('organizationalUnit')])) {
+                    $ou = $cert['subject'][ASN1::TextToOID('organizationalUnit')];
                     if (is_array($ou)) {
                         $ou = implode(',', $ou);
                     }
                     $temp = [];
                     if (preg_match('(EIK(\d+))i', $ou, $temp)) {
                         $leg = new LegalPerson(
-                            $cert['subject']['organization'],
+                            $cert['subject'][ASN1::TextToOID('organization')],
                             'NTR',
                             $temp[1],
                             null
@@ -469,58 +487,58 @@ class Certificate
                 if (in_array($pro, ['1.1.1.1', '1.1.1.2', '1.1.1.5'])) {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['organizationalUnit'],
+                        [ASN1::TextToOID('organizationalUnit')],
                         ['EGNT'=>'egn', 'PID'=>'pid']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['countryName'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('countryName')] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                 } elseif (in_array($pro, ['1.1.1.3', '1.1.1.4', '1.1.1.6'])) {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['organizationalUnit', 'title'],
+                        [ASN1::TextToOID('organizationalUnit'), ASN1::TextToOID('title')],
                         ['EGN'=>'egn', 'PID'=>'pid', 'B'=>'bulstat']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['countryName'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('countryName')] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['bulstat']) && $parsed['bulstat']) {
                         $leg = new LegalPerson(
-                            $cert['subject']['organization'],
+                            $cert['subject'][ASN1::TextToOID('organization')],
                             'NTR',
                             $parsed['bulstat'],
                             null
@@ -529,26 +547,26 @@ class Certificate
                 } else {
                     $parsed = $parseSubject(
                         $cert['subject'],
-                        ['organizationalUnit', 'title'],
+                        [ASN1::TextToOID('organizationalUnit'), ASN1::TextToOID('title')],
                         ['EGN' => 'egn', 'EGNT'=>'egn', 'PID'=>'pid']
                     );
                     if (isset($parsed['pid']) && $parsed['pid']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['pid'],
-                            $cert['subject']['countryName'] ?? null,
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('countryName')] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
                     if (isset($parsed['egn']) && $parsed['egn']) {
                         $nat = new NaturalPerson(
-                            $cert['subject']['commonName'],
+                            $cert['subject'][ASN1::TextToOID('commonName')],
                             'PNO',
                             $parsed['egn'],
                             'BG',
-                            $cert['subject']['emailAddress'] ?? null,
+                            $cert['subject'][ASN1::TextToOID('emailAddress')] ?? null,
                             $this->getSubjectData()
                         );
                     }
@@ -612,10 +630,17 @@ class Certificate
      */
     public function getSubjectData() : array
     {
-        $altName = $this->cert['extensions']['subjectAltName'] ?? [];
+        $altName = $this->cert['extensions'][ASN1::TextToOID('subjectAltName')] ?? [];
         $original = isset($altName[0]) && isset($altName[0][0]) && is_array($altName[0][0]) ?
             $altName[0][0] :
             ($altName[0] ?? []);
+        // needed for info notary?
+        $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
+                    $original[0] :
+                    $original;
+        $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
+                    $original[0] :
+                    $original;
         $compacted = [];
         foreach ($original as $item) {
             if (is_array($item) && count($item)) {
@@ -627,7 +652,11 @@ class Certificate
                 }
             }
         }
-        return array_merge($compacted, $this->cert['subject']);
+        $result = [];
+        foreach (array_merge($compacted, $this->cert['subject']) as $k => $v) {
+            $result[ASN1::OIDtoText($k)] = $v;
+        }
+        return $result;
     }
 
     /**
@@ -636,7 +665,11 @@ class Certificate
      */
     public function getIssuerData() : array
     {
-        return $this->cert['issuer'];
+        $result = [];
+        foreach ($this->cert['issuer'] as $k => $v) {
+            $result[ASN1::OIDtoText($k)] = $v;
+        }
+        return $result;
     }
     
     /**
@@ -668,7 +701,7 @@ class Certificate
                 ]
             ]
         ];
-        $pkey = ASN1::encodeDER($this->cert['SubjectPublicKeyInfo'], $map);
+        $pkey = Encoder::encode($this->cert['SubjectPublicKeyInfo'], $map);
         if ($pemEncoded) {
             $pkey = '' .
                 '-----BEGIN PUBLIC KEY-----' . "\n" .
@@ -696,7 +729,7 @@ class Certificate
     public function getPolicies() : array
     {
         $policies = [];
-        $temp = $this->cert['extensions']['certificatePolicies'] ?? [];
+        $temp = $this->cert['extensions'][ASN1::TextToOID('certificatePolicies')] ?? [];
         foreach ($temp as $policy) {
             $policies[] = $policy[0];
         }
@@ -712,7 +745,7 @@ class Certificate
         $policies = [];
         foreach (
             new \RecursiveIteratorIterator(
-                new \RecursiveArrayIterator($this->cert['extensions']['certificatePolicies'] ?? [])
+                new \RecursiveArrayIterator($this->cert['extensions'][ASN1::TextToOID('certificatePolicies')] ?? [])
             ) as $v
         ) {
             if (preg_match('(^(\d+\.?)+$)', $v)) {
@@ -731,7 +764,7 @@ class Certificate
         $policies = [];
         foreach (
             new \RecursiveIteratorIterator(
-                new \RecursiveArrayIterator($this->cert['extensions']['qcStatements'] ?? [])
+                new \RecursiveArrayIterator($this->cert['extensions'][ASN1::TextToOID('qcStatements')] ?? [])
             ) as $v
         ) {
             if (preg_match('(^(\d+\.?)+$)', $v)) {
@@ -748,13 +781,13 @@ class Certificate
     public function getCPSPolicies() : array
     {
         $policies = [];
-        $temp = $this->cert['extensions']['certificatePolicies'] ?? [];
+        $temp = $this->cert['extensions'][ASN1::TextToOID('certificatePolicies')] ?? [];
         foreach ($temp as $policy) {
             if (!isset($policy[1])) {
                 continue;
             }
             foreach ($policy[1] as $policyId) {
-                if (strtolower($policyId[0]) === 'cps') {
+                if (strtolower($policyId[0]) === ASN1::TextToOID('cps')) {
                     $policies[] = $policy[0];
                 }
             }
@@ -769,7 +802,7 @@ class Certificate
      */
     public function getSubjectKeyIdentifier()
     {
-        return $this->cert['extensions']['subjectKeyIdentifier'] ?? null;
+        return $this->cert['extensions'][ASN1::TextToOID('subjectKeyIdentifier')] ?? null;
     }
     /**
      * Get the authority key identifier (if available)
@@ -778,9 +811,12 @@ class Certificate
      */
     public function getAuthorityKeyIdentifier()
     {
-        foreach ($this->cert['extensions']['authorityKeyIdentifier'] ?? [] as $v) {
+        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityKeyIdentifier')] ?? [] as $v) {
+            if (is_array($v) && count($v) === 1) {
+                $v = $v[0];
+            }
             if (is_string($v)) {
-                return $v;
+                return static::base256toHex($v);
             }
         }
         return null;
@@ -803,8 +839,11 @@ class Certificate
     public function hasOCSP() : bool
     {
         $ocsp = [];
-        foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
-            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
+        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [] as $loc) {
+            if (count($loc) === 1 && isset($loc[0])) {
+                $loc = $loc[0];
+            }
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
                 return true;
             }
         }
@@ -817,7 +856,7 @@ class Certificate
      */
     public function hasCRL() : bool
     {
-        return count($this->cert['extensions']['cRLDistributionPoints'] ?? []) > 0;
+        return count($this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? []) > 0;
     }
 
     /**
@@ -828,8 +867,11 @@ class Certificate
     public function isRevokedOCSP() : bool
     {
         $ocsp = [];
-        foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
-            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
+        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [] as $loc) {
+            while (is_array($loc) && count($loc) === 1 && isset($loc[0])) {
+                $loc = $loc[0];
+            }
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
                 $ocsp[] = $loc[1];
             }
         }
@@ -844,8 +886,17 @@ class Certificate
                     $this->caCertificate->cert['SubjectPublicKeyInfo']['publicKey'],
                 1), true));
             }
-            $nameHash = base64_encode(sha1($this->meta['value']['tbsCertificate']['value']['issuer']['raw'], true));
-            $ocspRequest = OCSP::generateRequest('sha1', $nameHash, $keyHash, $this->getSerialNumber());
+            $nameHash = base64_encode(
+                sha1(
+                    substr(
+                        $this->data,
+                        $this->meta[0]['children'][0]['children'][3]['start'],
+                        $this->meta[0]['children'][0]['children'][3]['length']
+                    ),
+                    true
+                )
+            );
+            $ocspRequest = OCSPRequest::generate('sha1', $nameHash, $keyHash, $this->getSerialNumber());
             foreach ($ocsp as $url) {
                 $response = @file_get_contents($url, null, stream_context_create([
                     'http' => [
@@ -860,7 +911,8 @@ class Certificate
                 ]));
                 if ($response !== false) {
                     try {
-                        $ocspResponse = OCSP::parseResponse($response);
+                        $ocspData = OCSPResponse::fromString($response);
+                        $ocspResponse = $ocspData->toArray();
                         if ($ocspResponse['responseStatus'] === 'successful') {
                             $certs = [];
                             foreach ($ocspResponse['responseBytes']['response']['certs'] as $cert) {
@@ -880,10 +932,10 @@ class Certificate
                             }
                             $validateAgainst = $certs[0] ?? $this->caCertificate ?? $this;
                             if (!$this->validateSignature(
-                                OCSP::parseResponseSubject($response),
+                                $ocspData->subject(),
                                 substr($ocspResponse['responseBytes']['response']['signature'], 1),
                                 $validateAgainst->getPublicKey(),
-                                $ocspResponse['responseBytes']['response']['signatureAlgorithm']['algorithm']
+                                ASN1::OIDtoText($ocspResponse['responseBytes']['response']['signatureAlgorithm']['algorithm'])
                             )) {
                                 throw new CertificateException('Response has invalid signature');
                             }
@@ -895,7 +947,8 @@ class Certificate
                                 return true;
                             }
                         }
-                    } catch (\Exception $ignore) {}
+                    } catch (\Exception $ignore) {
+                    }
                 }
             }
         }
@@ -903,9 +956,12 @@ class Certificate
     }
     public function getCRLPoints() : array
     {
-        $points = $this->cert['extensions']['cRLDistributionPoints'] ?? [];
+        $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
         $result = [];
         foreach ($points as $point) {
+            while (is_array($point) && count($point) === 1 && isset($point[0])) {
+                $point = $point[0];
+            }
             if (strpos($point[0], 'http') === 0) {
                 $result[] = $point[0];
             }
@@ -915,8 +971,11 @@ class Certificate
     public function getOCSPPoints() : array
     {
         $ocsp = [];
-        foreach ($this->cert['extensions']['authorityInfoAccess'] ?? [] as $loc) {
-            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === 'ocsp') {
+        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [] as $loc) {
+            while (is_array($loc) && count($loc) === 1 && isset($loc[0])) {
+                $loc = $loc[0];
+            }
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
                 $ocsp[] = $loc[1];
             }
         }
@@ -930,29 +989,27 @@ class Certificate
      */
     public function isRevokedCRL(array $ca = []) : bool
     {
-        $points = $this->cert['extensions']['cRLDistributionPoints'] ?? [];
+        $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
         foreach ($points as $point) {
-            if (strpos($point[0], 'http') === 0) {
-                $crl = @file_get_contents($point[0]);
+            while (is_array($point) && count($point) === 1 && isset($point[0])) {
+                $point = $point[0];
+            }
+            if (strpos($point, 'http') === 0) {
+                $crl = @file_get_contents($point);
                 if ($crl === false) {
                     throw new CertificateException('Could not fetch CRL');
                 }
                 try {
-                    $data = CRLParser::parseData($crl);
+                    $data = CRL::fromString($crl)->toArray();
                 } catch (\Exception $e) {
                     throw new CertificateException('Could not parse CRL');
                 }
                 //if (count($ca)) {
                     $keyID = null;
                     foreach ($data['tbsCertList']['extensions'] as $item) {
-                        if ($item['extnID'] === 'authorityKeyIdentifier') {
-                            if (is_array($item['extnValue'])) {
-                                foreach ($item['extnValue'] as $v) {
-                                    if (is_string($v)) {
-                                        $item['extnValue'] = $v;
-                                        break;
-                                    }
-                                }
+                        if ($item['extnID'] === ASN1::TextToOID('authorityKeyIdentifier')) {
+                            while (is_array($item['extnValue']) && count($item['extnValue']) === 1 && isset($item['extnValue'][0])) {
+                                $item['extnValue'] = $item['extnValue'][0];
                             }
                             $keyID = static::base256toHex($item['extnValue']);
                         }
@@ -976,9 +1033,9 @@ class Certificate
                     if (!$found) {
                         throw new CertificateException('CA not found');
                     }
-                    $temp = ASN1::decodeDER($crl, null, true);
+                    $temp = Decoder::fromString($crl)->structure();
                     if (!$this->validateSignature(
-                        substr($crl, $temp['contents'][0]['start'], $temp['contents'][0]['length']),
+                        substr($crl, $temp[0]['children'][0]['start'], $temp[0]['children'][0]['length']),
                         substr($data['signatureValue'], 1),
                         $found->getPublicKey(),
                         $data['signatureAlgorithm']['algorithm']
