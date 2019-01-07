@@ -193,7 +193,11 @@ class Certificate
         $data['issuer'] = $temp;
         $temp = [];
         foreach ($data['extensions'] as $item) {
-            $temp[$item['extnID']] = $item['extnValue'];
+            $value = $item['extnValue'];
+            while (is_array($value) && count($value) === 1) {
+                $value = $value[0];
+            }
+            $temp[$item['extnID']] = $value;
         }
         $data['extensions'] = $temp;
         // if (!isset($data['extensions']['certificatePolicies'])) {
@@ -201,19 +205,20 @@ class Certificate
         // }
         $oid = ASN1::TextToOID('subjectKeyIdentifier');
         if (isset($data['extensions'][$oid])) {
-            if (is_array($data['extensions'][$oid]) && count($data['extensions'][$oid]) === 1) {
-                $data['extensions'][$oid] = $data['extensions'][$oid][0];
-            }
             $data['extensions'][$oid] = static::base256toHex(
                 $data['extensions'][$oid]
             );
         }
         $oid = ASN1::TextToOID('authorityKeyIdentifier');
         if (isset($data['extensions'][$oid])) {
-            foreach ($data['extensions'][$oid] as $k => $v) {
-                if (is_string($v)) {
-                    $data['extensions'][$oid][$k] = static::base256toHex($v);
+            if (!is_string($data['extensions'][$oid])) {
+                foreach ($data['extensions'][$oid] as $k => $v) {
+                    if (is_string($v)) {
+                        $data['extensions'][$oid] = static::base256toHex($v);
+                    }
                 }
+            } else {
+                $data['extensions'][$oid] = static::base256toHex($data['extensions'][$oid]);
             }
         }
         if (strpos($cert, '-BEGIN CERTIFICATE-') !== false) {
@@ -408,16 +413,11 @@ class Certificate
                 break;
             case 'INFONOTARY':
                 if (in_array($pro, ['1.1.1.1', '1.1.1.3', '1.1.2.1', '1.1.2.3'])) {
-                    $altName = $this->cert['extensions'][ASN1::TextToOID('subjectAltName')] ?? [];
-                    $original = isset($altName[0]) && isset($altName[0][0]) && is_array($altName[0][0]) ?
-                        $altName[0][0] :
-                        ($altName[0] ?? []);
-                    $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
-                        $original[0] :
-                        $original;
-                    $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
-                        $original[0] :
-                        $original;
+                    $original = $this->cert['extensions'][ASN1::TextToOID('subjectAltName')] ?? [];
+                    while (is_array($original) && isset($original[0]) && is_array($original[0]) && isset($original[0][0]) && is_array($original[0][0])) {
+                        $original = $original[0];
+                    }
+                    $compacted = [];
                     foreach ($original as $item) {
                         if (is_array($item) && count($item)) {
                             if (count($item) === 1) {
@@ -630,25 +630,20 @@ class Certificate
      */
     public function getSubjectData() : array
     {
-        $altName = $this->cert['extensions'][ASN1::TextToOID('subjectAltName')] ?? [];
-        $original = isset($altName[0]) && isset($altName[0][0]) && is_array($altName[0][0]) ?
-            $altName[0][0] :
-            ($altName[0] ?? []);
-        // needed for info notary?
-        $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
-                    $original[0] :
-                    $original;
-        $original = isset($original[0]) && isset($original[0][0]) && is_array($original[0][0]) ?
-                    $original[0] :
-                    $original;
+        $original = $this->cert['extensions'][ASN1::TextToOID('subjectAltName')] ?? [];
+        while (is_array($original) && isset($original[0]) && is_array($original[0]) && isset($original[0][0]) && is_array($original[0][0])) {
+            $original = $original[0];
+        }
         $compacted = [];
-        foreach ($original as $item) {
-            if (is_array($item) && count($item)) {
-                if (count($item) === 1) {
-                    $item = $item[0];
-                }
-                if (count($item) > 1) {
-                    $compacted[$item[0]] = $item[1];
+        if (is_array($original)) {
+            foreach ($original as $item) {
+                if (is_array($item) && count($item)) {
+                    if (count($item) === 1) {
+                        $item = $item[0];
+                    }
+                    if (count($item) > 1) {
+                        $compacted[$item[0]] = $item[1];
+                    }
                 }
             }
         }
@@ -811,15 +806,7 @@ class Certificate
      */
     public function getAuthorityKeyIdentifier()
     {
-        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityKeyIdentifier')] ?? [] as $v) {
-            if (is_array($v) && count($v) === 1) {
-                $v = $v[0];
-            }
-            if (is_string($v)) {
-                return static::base256toHex($v);
-            }
-        }
-        return null;
+        return $this->cert['extensions'][ASN1::TextToOID('authorityKeyIdentifier')] ?? null;
     }
 
     /**
@@ -843,7 +830,7 @@ class Certificate
             if (count($loc) === 1 && isset($loc[0])) {
                 $loc = $loc[0];
             }
-            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
+            if (isset($loc[0]) && is_string($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
                 return true;
             }
         }
@@ -957,13 +944,16 @@ class Certificate
     public function getCRLPoints() : array
     {
         $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
+        if (!is_array($points)) {
+            $points = [$points];
+        }
         $result = [];
         foreach ($points as $point) {
             while (is_array($point) && count($point) === 1 && isset($point[0])) {
                 $point = $point[0];
             }
-            if (strpos($point[0], 'http') === 0) {
-                $result[] = $point[0];
+            if (strpos($point, 'http') === 0) {
+                $result[] = $point;
             }
         }
         return $result;
