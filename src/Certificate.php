@@ -812,11 +812,15 @@ class Certificate
     /**
      * Is the certificate currently valid - checks notBefore and notAfter dates
      *
+     * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isExpired() : bool
+    public function isExpired(int $time = null) : bool
     {
-        return time() < $this->cert['validity']['notBefore'] || time() > $this->cert['validity']['notAfter'];
+        if ($time === null) {
+            $time = time();
+        }
+        return $time < $this->cert['validity']['notBefore'] || $time > $this->cert['validity']['notAfter'];
     }
     /**
      * Is there an OCSP endpoint
@@ -975,10 +979,14 @@ class Certificate
      * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
      *
      * @param array $ca optional array of certificate objects to validate the signature of the CRL against
+     * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isRevokedCRL(array $ca = []) : bool
+    public function isRevokedCRL(array $ca = [], int $time = null) : bool
     {
+        if ($time === null) {
+            $time = time();
+        }
         $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
         foreach ($points as $point) {
             while (is_array($point) && count($point) === 1 && isset($point[0])) {
@@ -1034,8 +1042,17 @@ class Certificate
                     }
                 //}
                 foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
+                    $reason = 0;
+                    foreach ($cert['extensions'] as $ext) {
+                        if ($ext['extnID'] === '2.5.29.21') {
+                            while (is_array($ext['extnValue'])) {
+                                $ext['extnValue'] = array_values($ext['extnValue'])[0];
+                            }
+                            $reason = (int)$ext['extnValue'];
+                        }
+                    }
                     if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
-                        $cert['revocationDate'] <= time()
+                        $cert['revocationDate'] <= $time && $reason !== 8
                     ) {
                         return true;
                     }
@@ -1049,11 +1066,12 @@ class Certificate
      * Is the certificate revoked - checks both OCSP endpoints and CRL distribution points
      *
      * @param array $ca optional array of certificate objects to validate the signature of the CRL against
+     * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isRevoked(array $ca = []) : bool
+    public function isRevoked(array $ca = [], int $time = null) : bool
     {
-        return $this->isRevokedOCSP() || $this->isRevokedCRL($ca);
+        return ($time === null && $this->isRevokedOCSP()) || $this->isRevokedCRL($ca, $time);
     }
 
     /**
@@ -1090,11 +1108,17 @@ class Certificate
 
     /**
      * Is the certificate valid, checks currently include dates & signature as well as OCSP and CRL list
-     *
+     * 
+     * @param array $ca optional array of certificate objects to validate the signature of the CRL against
+     * @param bool $chain should the parent certificates be checked - defaults to false
+     * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isValid() : bool
+    public function isValid(array $ca = [], bool $chain = false, int $time = null) : bool
     {
-        return !$this->isExpired() && $this->isSignatureValid() && !$this->isRevoked();
+        return !$this->isExpired($time) &&
+            $this->isSignatureValid() &&
+            !$this->isRevoked($ca, $time) &&
+            (!$chain || !$this->caCertificate || $this->caCertificate->isValid($ca, true, $time));
     }
 }
