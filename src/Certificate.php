@@ -193,11 +193,7 @@ class Certificate
         $data['issuer'] = $temp;
         $temp = [];
         foreach ($data['extensions'] as $item) {
-            $value = $item['extnValue'];
-            while (is_array($value) && count($value) === 1) {
-                $value = $value[0];
-            }
-            $temp[$item['extnID']] = $value;
+            $temp[$item['extnID']] = $item['extnValue'][0];
         }
         $data['extensions'] = $temp;
         // if (!isset($data['extensions']['certificatePolicies'])) {
@@ -808,7 +804,44 @@ class Certificate
     {
         return $this->cert['extensions'][ASN1::TextToOID('authorityKeyIdentifier')] ?? null;
     }
-
+    /**
+     * Get the CRL points
+     *
+     * @return array
+     */
+    public function getCRLPoints() : array
+    {
+        $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
+        $result = [];
+        foreach ($points as $point) {
+            while (is_array($point) && count($point) === 1 && isset($point[0])) {
+                $point = $point[0];
+            }
+            if (strpos($point, 'http') === 0) {
+                $result[] = $point;
+            }
+        }
+        return $result;
+    }
+    /**
+     * Get the OCSP points
+     *
+     * @return array
+     */
+    public function getOCSPPoints() : array
+    {
+        $urls = [];
+        $ocsp = $this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [];
+        foreach ($ocsp as $loc) {
+            while (is_array($loc) && count($loc) === 1 && isset($loc[0])) {
+                $loc = $loc[0];
+            }
+            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
+                $urls[] = $loc[1];
+            }
+        }
+        return $urls;
+    }
     /**
      * Is the certificate currently valid - checks notBefore and notAfter dates
      *
@@ -829,16 +862,7 @@ class Certificate
      */
     public function hasOCSP() : bool
     {
-        $ocsp = [];
-        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [] as $loc) {
-            if (count($loc) === 1 && isset($loc[0])) {
-                $loc = $loc[0];
-            }
-            if (isset($loc[0]) && is_string($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
-                return true;
-            }
-        }
-        return false;
+        return count($this->getOCSPPoints()) > 0;
     }
     /**
      * Are there any CRL distribution points
@@ -847,9 +871,8 @@ class Certificate
      */
     public function hasCRL() : bool
     {
-        return count($this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? []) > 0;
+        return count($this->getCRLPoints()) > 0;
     }
-
     /**
      * Is the certificate revoked - checks the OCSP endpoints (if any)
      *
@@ -857,15 +880,7 @@ class Certificate
      */
     public function isRevokedOCSP() : bool
     {
-        $ocsp = [];
-        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [] as $loc) {
-            while (is_array($loc) && count($loc) === 1 && isset($loc[0])) {
-                $loc = $loc[0];
-            }
-            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
-                $ocsp[] = $loc[1];
-            }
-        }
+        $ocsp = $this->getOCSPPoints();
         if (count($ocsp)) {
             if ($this->isSelfSigned()) {
                 $keyHash = base64_encode(sha1(substr($this->cert['SubjectPublicKeyInfo']['publicKey'], 1), true));
@@ -945,36 +960,6 @@ class Certificate
         }
         return false;
     }
-    public function getCRLPoints() : array
-    {
-        $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
-        if (!is_array($points)) {
-            $points = [$points];
-        }
-        $result = [];
-        foreach ($points as $point) {
-            while (is_array($point) && count($point) === 1 && isset($point[0])) {
-                $point = $point[0];
-            }
-            if (strpos($point, 'http') === 0) {
-                $result[] = $point;
-            }
-        }
-        return $result;
-    }
-    public function getOCSPPoints() : array
-    {
-        $ocsp = [];
-        foreach ($this->cert['extensions'][ASN1::TextToOID('authorityInfoAccess')] ?? [] as $loc) {
-            while (is_array($loc) && count($loc) === 1 && isset($loc[0])) {
-                $loc = $loc[0];
-            }
-            if (isset($loc[0]) && isset($loc[1]) && strtolower($loc[0]) === ASN1::TextToOID('ocsp')) {
-                $ocsp[] = $loc[1];
-            }
-        }
-        return $ocsp;
-    }
     /**
      * Is the certificate revoked - checks for CRL distrib points, downloads and parses the CRL and checks the number
      *
@@ -987,75 +972,71 @@ class Certificate
         if ($time === null) {
             $time = time();
         }
-        $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
+        $points = $this->getCRLPoints();
         foreach ($points as $point) {
-            while (is_array($point) && count($point) === 1 && isset($point[0])) {
-                $point = $point[0];
+            $crl = @file_get_contents($point);
+            if ($crl === false) {
+                throw new CertificateException('Could not fetch CRL');
             }
-            if (strpos($point, 'http') === 0) {
-                $crl = @file_get_contents($point);
-                if ($crl === false) {
-                    throw new CertificateException('Could not fetch CRL');
+            try {
+                $data = CRL::fromString($crl)->toArray();
+            } catch (\Exception $e) {
+                throw new CertificateException('Could not parse CRL');
+            }
+            $keyID = null;
+            foreach ($data['tbsCertList']['extensions'] as $item) {
+                if ($item['extnID'] === ASN1::TextToOID('authorityKeyIdentifier')) {
+                    while (is_array($item['extnValue']) && count($item['extnValue']) === 1 && isset($item['extnValue'][0])) {
+                        $item['extnValue'] = $item['extnValue'][0];
+                    }
+                    $keyID = static::base256toHex($item['extnValue']);
                 }
-                try {
-                    $data = CRL::fromString($crl)->toArray();
-                } catch (\Exception $e) {
-                    throw new CertificateException('Could not parse CRL');
+            }
+            if (!$keyID) {
+                throw new CertificateException('CRL is missing authorityKeyIdentifier');
+            }
+            if ($this->caCertificate) {
+                $ca[] = $this->caCertificate;
+            }
+            if ($this->isSelfSigned()) {
+                $ca[] = $this;
+            }
+            $found = null;
+            foreach ($ca as $cert) {
+                if ($cert->getSubjectKeyIdentifier() === $keyID) {
+                    $found = $cert;
+                    break;
                 }
-                //if (count($ca)) {
-                    $keyID = null;
-                    foreach ($data['tbsCertList']['extensions'] as $item) {
-                        if ($item['extnID'] === ASN1::TextToOID('authorityKeyIdentifier')) {
-                            while (is_array($item['extnValue']) && count($item['extnValue']) === 1 && isset($item['extnValue'][0])) {
-                                $item['extnValue'] = $item['extnValue'][0];
-                            }
-                            $keyID = static::base256toHex($item['extnValue']);
+            }
+            if (count($ca)) {
+                if (!$found) {
+                    throw new CertificateException('CA not found');
+                }
+                $temp = Decoder::fromString($crl)->structure();
+                if (!$this->validateSignature(
+                    substr($crl, $temp[0]['children'][0]['start'], $temp[0]['children'][0]['length']),
+                    substr($data['signatureValue'], 1),
+                    $found->getPublicKey(),
+                    $data['signatureAlgorithm']['algorithm']
+                )) {
+                    throw new CertificateException('CRL has invalid signature');
+                }
+            }
+            foreach ($data['tbsCertList']['revokedCertificates'] ?? [] as $cert) {
+                $reason = 0;
+                foreach ($cert['extensions'] ?? [] as $ext) {
+                    if ($ext['extnID'] === '2.5.29.21') {
+                        while (is_array($ext['extnValue'])) {
+                            $ext['extnValue'] = array_values($ext['extnValue'])[0];
                         }
+                        $reason = (int)$ext['extnValue'];
                     }
-                    if (!$keyID) {
-                        throw new CertificateException('CRL is missing authorityKeyIdentifier');
-                    }
-                    if ($this->caCertificate) {
-                        $ca[] = $this->caCertificate;
-                    }
-                    if ($this->isSelfSigned()) {
-                        $ca[] = $this;
-                    }
-                    $found = null;
-                    foreach ($ca as $cert) {
-                        if ($cert->getSubjectKeyIdentifier() === $keyID) {
-                            $found = $cert;
-                            break;
-                        }
-                    }
-                    if (!$found) {
-                        throw new CertificateException('CA not found');
-                    }
-                    $temp = Decoder::fromString($crl)->structure();
-                    if (!$this->validateSignature(
-                        substr($crl, $temp[0]['children'][0]['start'], $temp[0]['children'][0]['length']),
-                        substr($data['signatureValue'], 1),
-                        $found->getPublicKey(),
-                        $data['signatureAlgorithm']['algorithm']
-                    )) {
-                        throw new CertificateException('CRL has invalid signature');
-                    }
-                //}
-                foreach ($data['tbsCertList']['revokedCertificates'] as $cert) {
-                    $reason = 0;
-                    foreach ($cert['extensions'] as $ext) {
-                        if ($ext['extnID'] === '2.5.29.21') {
-                            while (is_array($ext['extnValue'])) {
-                                $ext['extnValue'] = array_values($ext['extnValue'])[0];
-                            }
-                            $reason = (int)$ext['extnValue'];
-                        }
-                    }
-                    if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
-                        $cert['revocationDate'] <= $time && $reason !== 8
-                    ) {
-                        return true;
-                    }
+                }
+                if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
+                    $cert['revocationDate'] <= $time &&
+                    $reason !== 8
+                ) {
+                    return true;
                 }
             }
         }
@@ -1071,7 +1052,8 @@ class Certificate
      */
     public function isRevoked(array $ca = [], int $time = null) : bool
     {
-        return ($time === null && $this->isRevokedOCSP()) || $this->isRevokedCRL($ca, $time);
+        return ($time === null && $this->caCertificate !== null && $this->isRevokedOCSP()) ||
+            $this->isRevokedCRL($ca, $time);
     }
 
     /**
@@ -1088,6 +1070,9 @@ class Certificate
                 $this->getPublicKey(),
                 $this->sign['algorithm']['algorithm']
             );
+        }
+        if (!$this->caCertificate) {
+            throw new CertificateException("Cannot validate signature without CA");
         }
         return $this->validateSignature(
             $this->sign['subject'],
@@ -1117,7 +1102,7 @@ class Certificate
     public function isValid(array $ca = [], bool $chain = false, int $time = null) : bool
     {
         return !$this->isExpired($time) &&
-            $this->isSignatureValid() &&
+            ((!$this->caCertificate && !$this->isSelfSigned()) || $this->isSignatureValid()) &&
             !$this->isRevoked($ca, $time) &&
             (!$chain || !$this->caCertificate || $this->caCertificate->isValid($ca, true, $time));
     }
