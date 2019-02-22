@@ -10,123 +10,121 @@ use vakata\asn1\structures\TimestampResponse;
 
 class P7S
 {
-    protected $p7s;
-    protected $raw;
-
     /**
-     * Create an instance from a file.
-     * @param  string   $file the path to the detached signature
-     * @return \vakata\certificate\P7S      the P7S instance
+     * Get all signers from a file.
+     * @param  string   $signature the path to the detached signature
+     * @param  string   $data the path to the signed data
+     * @return array    all signers
      */
-    public static function fromFile(string $file) : P7S
+    public static function fromFile(string $signature, string $data) : array
     {
-        return new static(file_get_contents($file));
+        return static::fromString(file_get_contents($signature), file_get_contents($data));
     }
 
     /**
-     * Create an instance from a string.
-     * @param  string   $data the detached signature
-     * @return \vakata\certificate\P7S      the P7S instance
+     * Get all signers from a data string
+     * @param  string   $signature the signature
+     * @param  string   $data the signed data
+     * @return array    all signers
      */
-    public static function fromString(string $data) : P7S
+    public static function fromString(string $signature, string $data) : array
     {
-        return new static($data);
-    }
-
-    /**
-     * Create an instance.
-     * @param  string      $cert the detached signature to parse
-     */
-    public function __construct(string $data)
-    {
-        $this->p7s  = Parser::fromString($data);
+        $p7s  = Parser::fromString($signature);
         $raw = Parser::map();
         $raw['children']['data']['children']['certificates']['repeat'] = [ 'tag' => ASN1::TYPE_ANY_DER ];
         $raw['children']['data']['children']['signerInfos']['repeat']['children']['signed']['tag'] = ASN1::TYPE_ANY_DER;
-        $this->raw  = Decoder::fromString($data)->map($raw);
-    }
+        $raw  = Decoder::fromString($signature)->map($raw);
 
-    /**
-     * Get all signers
-     *
-     * @param string $data the data to validate against (optional)
-     * @return array
-     */
-    public function getSigners(string $data = null) : array
-    {
-        $rslt = [];
-        foreach ($this->p7s->toArray()['data']['signerInfos'] as $k => $v) {
-            $rslt[$k] = [
-                'signed'      => null,
-                'certificate' => null,
-                'timestamp'   => null,
+        $signers = [];
+        foreach ($p7s->toArray()['data']['signerInfos'] as $k => $v) {
+            $signers[$k] = [
                 'hash'        => null,
-                'algorithm'   => $v['digest_algo']['algorithm']
+                'algorithm'   => $v['digest_algo']['algorithm'],
+                'signed'      => null,
+                'valid'       => false,
+                'certificate' => null,
+                'timestamp'   => null
             ];
             foreach ($v['signed'] ?? [] as $a) {
                 if ($a['type'] === '1.2.840.113549.1.9.4') {
-                    $rslt[$k]['hash'] = strtolower(bin2hex(Decoder::fromString($a['data'][0])->values()[0]));
+                    $signers[$k]['hash'] = strtolower(bin2hex(Decoder::fromString($a['data'][0])->values()[0]));
                 }
                 if ($a['type'] === '1.2.840.113549.1.9.5') {
-                    $rslt[$k]['signed'] = Decoder::fromString($a['data'][0])->values()[0];
+                    $signers[$k]['signed'] = Decoder::fromString($a['data'][0])->values()[0];
                 }
             }
             foreach ($v['unsigned'] ?? [] as $a) {
                 if ($a['type'] === "1.2.840.113549.1.9.16.2.14") {
-                    $rslt[$k]['timestamp'] = Decoder::fromString(
-                        Decoder::fromString($a['data'][0])->values()[0][1][0][2][1][0]
-                    )->map(TimestampResponse::mapToken());
+                    $signers[$k]['timestamp'] = [
+                        'data' => Decoder::fromString(
+                                Decoder::fromString($a['data'][0])->values()[0][1][0][2][1][0]
+                            )->map(TimestampResponse::mapToken()),
+                        'stamped' => $signers[$k]['timestamp']['genTime'],
+                        'valid' => base64_decode($signers[$k]['timestamp']['messageImprint']['hashedMessage']) === hash(
+                                ASN1::OIDtoText(
+                                    $signers[$k]['timestamp']['messageImprint']['hashAlgorithm']['algorithm']
+                                ),
+                                base64_decode($v['signature']),
+                                true
+                            )
+                    ];
                 }
             }
-            foreach ($this->p7s->toArray()['data']['certificates'] as $kk => $vv) {
+            foreach ($p7s->toArray()['data']['certificates'] as $kk => $vv) {
                 if ($v['sid']['serial'] === $vv['tbsCertificate']['serialNumber']) {
-                    $rslt[$k]['certificate'] = Certificate::fromString(
-                        $this->raw['data']['certificates'][$kk]
+                    $signers[$k]['certificate'] = Certificate::fromString(
+                        $raw['data']['certificates'][$kk]
                     );
                 }
             }
-            if ($data !== null) {
-                $rslt[$k]['signatureValid'] = false;
-                $rslt[$k]['timestampValid'] = false;
-                $hash = strtolower(hash(ASN1::OIDtoText($rslt[$k]['algorithm']), $data, false));
-                if (isset($v['signed'])) {
-                    $signed = $this->raw['data']['signerInfos'][$k]['signed'];
-                    $signed[0] = chr(17 + 32);
-                } else {
-                    $signed = $data;
-                    $rslt[$k]['hash'] = $hash;
-                }
-                if ($rslt[$k]['timestamp']) {
-                    $rslt[$k]['timestampValid'] = base64_decode($rslt[$k]['timestamp']['messageImprint']['hashedMessage']) === hash(
-                        ASN1::OIDtoText($rslt[$k]['timestamp']['messageImprint']['hashAlgorithm']['algorithm']),
-                        base64_decode($v['signature']),
-                        true
-                    );
-                }
-                if ($rslt[$k]['certificate']) {
-                    $rslt[$k]['signatureValid'] = $hash === $rslt[$k]['hash'] && $this->validateSignature(
-                        $signed,
-                        base64_decode($v['signature']),
-                        $rslt[$k]['certificate']->getPublicKey(),
-                        $rslt[$k]['algorithm']
-                    );
-                }
+            $hash = strtolower(hash(ASN1::OIDtoText($signers[$k]['algorithm']), $data, false));
+            if (isset($v['signed'])) {
+                $signed = $raw['data']['signerInfos'][$k]['signed'];
+                $signed[0] = chr(17 + 32);
+            } else {
+                $signed = $data;
+                $signers[$k]['hash'] = $hash;
+            }
+            if ($signers[$k]['certificate']) {
+                $signers[$k]['valid'] = $hash === $signers[$k]['hash'] && static::validateSignature(
+                    $signed,
+                    base64_decode($v['signature']),
+                    $signers[$k]['certificate']->getPublicKey(),
+                    $signers[$k]['algorithm']
+                );
             }
         }
-        return $rslt;
+        return $signers;
     }
 
-    public function isValid(string $data)
+    /**
+     * Get all signers from a PDF file
+     * @param  string   $pdf the pdf data
+     * @return array    all signers
+     */
+    public static function fromPDFFile(string $pdf) : array
     {
-        foreach ($this->getSigners($data) as $signer) {
-            if ($signer['timestamp'] !== null && (!isset($signer['timestampValid']) || !$signer['timestampValid'])) {
-                return false;
-            }
-            if (!isset($signer['signatureValid']) || !$signer['signatureValid']) {
-                return false;
+        return static::fromPDF(file_get_contents($pdf));
+    }
+    /**
+     * Get all signers from PDF data
+     * @param  string   $pdf the pdf data
+     * @return array    all signers
+     */
+    public static function fromPDF(string $pdf) : array
+    {
+        $signers = [];
+        if (preg_match_all('([\r\n][\d ]+obj[\r\n](.*?)endobj)i', $pdf, $matches)) {
+            foreach ($matches[0] as $obj) {
+                if (strpos($obj, 'pkcs7.detached') !== false) {
+                    $ranges = explode(' ', trim(explode(']', explode('[', $obj, 2)[1], 2)[0]));
+                    $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
+                    $signature = hex2bin(explode('>', explode('/Contents<', $obj, 2)[1], 2)[0]);
+                    $signers = array_merge($signers, static::fromString($signature, $content));
+                }
             }
         }
-        return true;
+        return $signers;
     }
 
     /**
@@ -138,7 +136,7 @@ class P7S
      * @param string $algorithm the algorithm used to sign the message
      * @return bool is the signature valid
      */
-    protected function validateSignature($subject, $signature, $public, $algorithm) : bool
+    protected static function validateSignature($subject, $signature, $public, $algorithm) : bool
     {
         /*
         $rslt = null;
