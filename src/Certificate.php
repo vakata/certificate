@@ -986,7 +986,7 @@ class Certificate
             $keyID = null;
             foreach ($data['tbsCertList']['extensions'] as $item) {
                 if ($item['extnID'] === ASN1::TextToOID('authorityKeyIdentifier')) {
-                    while (is_array($item['extnValue']) && count($item['extnValue']) === 1 && isset($item['extnValue'][0])) {
+                    while (is_array($item['extnValue']) && isset($item['extnValue'][0])) {
                         $item['extnValue'] = $item['extnValue'][0];
                     }
                     $keyID = static::base256toHex($item['extnValue']);
