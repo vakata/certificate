@@ -989,7 +989,9 @@ class Certificate
                     while (is_array($item['extnValue']) && isset($item['extnValue'][0])) {
                         $item['extnValue'] = $item['extnValue'][0];
                     }
-                    $keyID = static::base256toHex($item['extnValue']);
+                    if (is_string($item['extnValue'])) {
+                        $keyID = static::base256toHex($item['extnValue']);
+                    }
                 }
             }
             if (!$keyID) {
