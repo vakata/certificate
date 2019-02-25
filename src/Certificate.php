@@ -72,6 +72,13 @@ class Certificate
             list($this->naturalPerson, $this->legalPerson) = $this->parseLegacyCertificate($this->cert);
         }
     }
+    public function toString()
+    {
+        return '' . 
+            '-----BEGIN CERTIFICATE-----' . "\r\n" .
+            chunk_split(base64_encode($this->data), 64, "\r\n") .
+            '-----END CERTIFICATE-----';
+    }
 
     /**
      * Set the CA certificate used to issue the current certificate (used for signature validation)
