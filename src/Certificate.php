@@ -824,8 +824,13 @@ class Certificate
             while (is_array($point) && count($point) === 1 && isset($point[0])) {
                 $point = $point[0];
             }
-            if (strpos($point, 'http') === 0) {
-                $result[] = $point;
+            if (!is_array($point)) {
+                $point = [ $point ];
+            }
+            foreach ($point as $p) {
+                if (strpos($p, 'http') === 0) {
+                    $result[] = $p;
+                }
             }
         }
         return $result;
