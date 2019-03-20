@@ -198,13 +198,15 @@ class P7S
     public static function validatePDF(string $pdf) : array
     {
         $signers = [];
-        if (preg_match_all('([\r\n][\d ]+obj[\r\n](.*?)endobj)i', $pdf, $matches)) {
+        if (preg_match_all('([\r\n][\d ]+obj[\r\n](.*?)endobj)is', $pdf, $matches)) {
             foreach ($matches[0] as $obj) {
                 if (strpos($obj, 'pkcs7.detached') !== false) {
                     $ranges = explode(' ', trim(explode(']', explode('[', $obj, 2)[1], 2)[0]));
                     $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
-                    $signature = hex2bin(explode('>', explode('/Contents<', $obj, 2)[1], 2)[0]);
-                    $signers = array_merge($signers, static::fromString($signature)->validateData($content));
+                    $signature = hex2bin(explode('>', explode('/Contents<', str_replace(["\r","\n","\t", " "], '', $obj), 2)[1], 2)[0]);
+                    if ($signature) {
+                        $signers = array_merge($signers, static::fromString($signature)->validateData($content));
+                    }
                 }
             }
         }
