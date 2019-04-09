@@ -813,24 +813,19 @@ class Certificate
     }
     /**
      * Get the CRL points
-     *
+     * @param bool $httpOnly should only HTTP points be returned - defaults to true
      * @return array
      */
-    public function getCRLPoints() : array
+    public function getCRLPoints(bool $httpOnly = true) : array
     {
         $points = $this->cert['extensions'][ASN1::TextToOID('cRLDistributionPoints')] ?? [];
         $result = [];
         foreach ($points as $point) {
-            while (is_array($point) && count($point) === 1 && isset($point[0])) {
+            while (is_array($point) && isset($point[0])) {
                 $point = $point[0];
             }
-            if (!is_array($point)) {
-                $point = [ $point ];
-            }
-            foreach ($point as $p) {
-                if (strpos($p, 'http') === 0) {
-                    $result[] = $p;
-                }
+            if (!$httpOnly || strpos($point, 'http') === 0) {
+                $result[] = $point;
             }
         }
         return $result;
