@@ -214,15 +214,10 @@ class Certificate
         }
         $oid = ASN1::TextToOID('authorityKeyIdentifier');
         if (isset($data['extensions'][$oid])) {
-            if (!is_string($data['extensions'][$oid])) {
-                foreach ($data['extensions'][$oid] as $k => $v) {
-                    if (is_string($v)) {
-                        $data['extensions'][$oid] = static::base256toHex($v);
-                    }
-                }
-            } else {
-                $data['extensions'][$oid] = static::base256toHex($data['extensions'][$oid]);
+            while (is_array($data['extensions'][$oid])) {
+                $data['extensions'][$oid] = array_values($data['extensions'][$oid])[0];
             }
+            $data['extensions'][$oid] = static::base256toHex($data['extensions'][$oid]);
         }
         if (strpos($cert, '-BEGIN CERTIFICATE-') !== false) {
             $cert = str_replace(['-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----', "\r", "\n"], '', $cert);
