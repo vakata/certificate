@@ -52,6 +52,9 @@ class LegalPerson extends Person
     }
     public function getBulstat()
     {
-        return $this->idProvider === 'NTR' && $this->country === 'BG' && $this->validBulstat($this->id) ? $this->id : null;
+        return $this->idProvider === 'NTR' &&
+            ($this->country === 'BG' || $this->country === null) &&
+            $this->validBulstat($this->id) ?
+                $this->id : null;
     }
 }
