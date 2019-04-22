@@ -6,7 +6,6 @@ use vakata\asn1\ASN1;
 use vakata\asn1\Encoder;
 use vakata\asn1\Decoder;
 use vakata\asn1\structures\Certificate as Parser;
-use vakata\asn1\structures\CRL;
 use vakata\asn1\structures\OCSPRequest;
 use vakata\asn1\structures\OCSPResponse;
 
@@ -976,25 +975,15 @@ class Certificate
         }
         $points = $this->getCRLPoints();
         foreach ($points as $point) {
-            $crl = @file_get_contents($point);
-            if ($crl === false) {
+            $data = @file_get_contents($point);
+            if ($data === false) {
                 throw new CertificateException('Could not fetch CRL');
             }
             try {
-                $data = CRL::fromString($crl)->toArray();
+                $data = CRL::fromString($data);
+                $keyID = $data->getAuthorityKeyIdentifier();
             } catch (\Exception $e) {
                 throw new CertificateException('Could not parse CRL');
-            }
-            $keyID = null;
-            foreach ($data['tbsCertList']['extensions'] as $item) {
-                if ($item['extnID'] === ASN1::TextToOID('authorityKeyIdentifier')) {
-                    while (is_array($item['extnValue']) && isset($item['extnValue'][0])) {
-                        $item['extnValue'] = $item['extnValue'][0];
-                    }
-                    if (is_string($item['extnValue'])) {
-                        $keyID = static::base256toHex($item['extnValue']);
-                    }
-                }
             }
             if (!$keyID) {
                 throw new CertificateException('CRL is missing authorityKeyIdentifier');
@@ -1005,44 +994,12 @@ class Certificate
             if ($this->isSelfSigned()) {
                 $ca[] = $this;
             }
-            $found = null;
-            foreach ($ca as $cert) {
-                if ($cert->getSubjectKeyIdentifier() === $keyID) {
-                    $found = $cert;
-                    break;
-                }
-            }
             if (count($ca)) {
-                if (!$found) {
-                    throw new CertificateException('CA not found');
-                }
-                $temp = Decoder::fromString($crl)->structure();
-                if (!$this->validateSignature(
-                    substr($crl, $temp[0]['children'][0]['start'], $temp[0]['children'][0]['length']),
-                    substr($data['signatureValue'], 1),
-                    $found->getPublicKey(),
-                    $data['signatureAlgorithm']['algorithm']
-                )) {
-                    throw new CertificateException('CRL has invalid signature');
+                if (!$data->isSignatureValid($ca)) {
+                    throw new CertificateException('Could not verify CRL signature');
                 }
             }
-            foreach ($data['tbsCertList']['revokedCertificates'] ?? [] as $cert) {
-                $reason = 0;
-                foreach ($cert['extensions'] ?? [] as $ext) {
-                    if ($ext['extnID'] === '2.5.29.21') {
-                        while (is_array($ext['extnValue'])) {
-                            $ext['extnValue'] = array_values($ext['extnValue'])[0];
-                        }
-                        $reason = (int)$ext['extnValue'];
-                    }
-                }
-                if ($cert['userCertificate'] === $this->cert['serialNumber'] &&
-                    $cert['revocationDate'] <= $time &&
-                    $reason !== 8
-                ) {
-                    return true;
-                }
-            }
+            return $data->isRevoked($this->cert['serialNumber'], $time);
         }
         return false;
     }
