@@ -271,7 +271,7 @@ class Certificate
             preg_match('((VAT|NTR|[A-Z]{2}\:)([A-Z]{2})\-(.*))i', $legal, $temp)
         ) {
             return new LegalPerson(
-                $cert['subject'][ASN1::TextToOID('organization')],
+                $cert['subject'][ASN1::TextToOID('organization')] ?? '',
                 $temp[1],
                 $temp[3],
                 $temp[2]

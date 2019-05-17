@@ -37,11 +37,15 @@ class P7S
      */
     public function __construct(string $data)
     {
-        $this->p7s = Parser::fromString($data);
-        $raw = Parser::map();
-        $raw['children']['data']['children']['certificates']['repeat'] = [ 'tag' => ASN1::TYPE_ANY_DER ];
-        $raw['children']['data']['children']['signerInfos']['repeat']['children']['signed']['tag'] = ASN1::TYPE_ANY_DER;
-        $this->raw  = Decoder::fromString($data)->map($raw);
+        try {
+            $this->p7s = Parser::fromString($data);
+            $raw = Parser::map();
+            $raw['children']['data']['children']['certificates']['repeat'] = [ 'tag' => ASN1::TYPE_ANY_DER ];
+            $raw['children']['data']['children']['signerInfos']['repeat']['children']['signed']['tag'] = ASN1::TYPE_ANY_DER;
+            $this->raw  = Decoder::fromString($data)->map($raw);
+        } catch (\vakata\asn1\ASN1Exception $e) {
+            throw new CertificateException('Invalid signature');
+        }
     }
     /**
      * Get all signers from the signature.
@@ -204,7 +208,7 @@ class P7S
         foreach (preg_split("(\r|\n)", $pdf) as $row) {
             if (str_replace("\r", '', trim($row)) === 'endobj') {
                 $append = false;
-                if (strpos($matches[$current], 'pkcs7.detached') === false) {
+                if (isset($matches[$current]) && strpos($matches[$current], 'pkcs7.detached') === false) {
                     $matches[$current] = '';
                 }
                 continue;
@@ -221,11 +225,15 @@ class P7S
         }
         foreach ($matches as $obj) {
             if (strpos($obj, 'pkcs7.detached') !== false) {
-                $ranges = explode(' ', trim(explode(']', explode('[', $obj, 2)[1], 2)[0]));
-                $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
-                $signature = hex2bin(explode('>', explode('/Contents<', str_replace(["\r","\n","\t", " "], '', $obj), 2)[1], 2)[0]);
-                if ($signature) {
-                    $signers = array_merge($signers, static::fromString($signature)->validateData($content));
+                $ranges = explode(' ', trim(explode(']', (explode('[', $obj, 2)[1] ?? ''), 2)[0]));
+                if (isset($ranges[0]) && isset($ranges[1]) && isset($ranges[2]) && isset($ranges[3])) {
+                    $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
+                    $signature = hex2bin(explode('>', explode('/Contents<', str_replace(["\r","\n","\t", " "], '', $obj), 2)[1], 2)[0]);
+                    if ($signature) {
+                        $signers = array_merge($signers, static::fromString($signature)->validateData($content));
+                    }
+                } else {
+                    throw new CertificateException('Invalid signature');
                 }
             }
         }
