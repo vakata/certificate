@@ -34,7 +34,11 @@ class CRL
     }
     public function getAuthorityKeyIdentifier()
     {
-        foreach ($this->data->toArray(false, true)['tbsCertList']['extensions'] as $item) {
+        $temp = $this->data->toArray(false, true)['tbsCertList']['extensions'];
+        if (!$temp) {
+            return null;
+        }
+        foreach ($temp as $item) {
             if ($item['extnID'] === ASN1::TextToOID('authorityKeyIdentifier')) {
                 $val = $item['extnValue'];
                 while (!is_string($val) && isset($val[0])) {
@@ -50,14 +54,15 @@ class CRL
     public function isSignatureValid(array $ca) : bool
     {
         $keyID = $this->getAuthorityKeyIdentifier();
-        if ($keyID === null) {
-            throw new CertificateException('No authority ID');
-        }
         $found = null;
-        foreach ($ca as $cert) {
-            if ($cert->getSubjectKeyIdentifier() === $keyID) {
-                $found = $cert;
-                break;
+        if ($keyID === null) {
+            $found = array_values($ca)[0] ?? null;
+        } else {
+            foreach ($ca as $cert) {
+                if ($cert->getSubjectKeyIdentifier() === $keyID) {
+                    $found = $cert;
+                    break;
+                }
             }
         }
         if (!$found) {

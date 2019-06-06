@@ -985,9 +985,9 @@ class Certificate
             } catch (\Exception $e) {
                 throw new CertificateException('Could not parse CRL');
             }
-            if (!$keyID) {
-                throw new CertificateException('CRL is missing authorityKeyIdentifier');
-            }
+            // if (!$keyID) {
+            //     throw new CertificateException('CRL is missing authorityKeyIdentifier');
+            // }
             if ($this->caCertificate) {
                 $ca[] = $this->caCertificate;
             }
