@@ -72,7 +72,7 @@ class P7S
                     $signers[$k]['signed'] = Decoder::fromString($a['data'][0])->values()[0];
                 }
             }
-            foreach ($v['unsigned'] ?? [] as $a) {
+            foreach (($v['unsigned'] ?? []) as $a) {
                 if ($a['type'] === "1.2.840.113549.1.9.16.2.14") {
                     $signers[$k]['timestamp'] = [
                         'data' => Decoder::fromString(
@@ -228,9 +228,19 @@ class P7S
                 $ranges = explode(' ', trim(explode(']', (explode('[', $obj, 2)[1] ?? ''), 2)[0]));
                 if (isset($ranges[0]) && isset($ranges[1]) && isset($ranges[2]) && isset($ranges[3])) {
                     $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
+                    $signed = null;
+                    if (preg_match("(/M\(D:([\d+\-']+)\))", $obj, $matches)) {
+                        $signed = strtotime(str_replace("'", '', $matches[1]));
+                    }
                     $signature = hex2bin(explode('>', explode('/Contents<', str_replace(["\r","\n","\t", " "], '', $obj), 2)[1], 2)[0]);
                     if ($signature) {
-                        $signers = array_merge($signers, static::fromString($signature)->validateData($content));
+                        $signer = static::fromString($signature)->validateData($content);
+                        foreach ($signer as $k => $s) {
+                            if ($s['signed'] === null && $signed) {
+                                $signer[$k]['signed'] = $signed;
+                            }
+                        }
+                        $signers = array_merge($signers, $signer);
                     }
                 } else {
                     throw new CertificateException('Invalid signature');
