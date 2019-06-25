@@ -97,24 +97,27 @@ class CRL
     }
     public function revoked(bool $extensions = false)
     {
-        foreach ($this->data->toArray(false, true)['tbsCertList']['revokedCertificates']->rawData() as $v) {
-            $cert = Decoder::fromString($this->data->getReader()->chunk($v['start'], $v['length']))
-                ->map(Parser::map()['children']['tbsCertList']['children']['revokedCertificates']['repeat']);
-            $reason = 0;
-            foreach ($cert['extensions'] ?? [] as $ext) {
-                if ($ext['extnID'] === '2.5.29.21') {
-                    while (is_array($ext['extnValue'])) {
-                        $ext['extnValue'] = array_values($ext['extnValue'])[0];
+        $temp = $this->data->toArray(false, true)['tbsCertList'];
+        if (isset($temp['revokedCertificates'])) {
+            foreach ($temp['revokedCertificates']->rawData() as $v) {
+                $cert = Decoder::fromString($this->data->getReader()->chunk($v['start'], $v['length']))
+                    ->map(Parser::map()['children']['tbsCertList']['children']['revokedCertificates']['repeat']);
+                $reason = 0;
+                foreach ($cert['extensions'] ?? [] as $ext) {
+                    if ($ext['extnID'] === '2.5.29.21') {
+                        while (is_array($ext['extnValue'])) {
+                            $ext['extnValue'] = array_values($ext['extnValue'])[0];
+                        }
+                        $reason = (int)$ext['extnValue'];
                     }
-                    $reason = (int)$ext['extnValue'];
                 }
-            }
-            if (!$extensions) {
-                unset($cert['extensions']);
-            }
-            if ($reason !== 8) {
-                $cert['reason'] = $reason;
-                yield $cert;
+                if (!$extensions) {
+                    unset($cert['extensions']);
+                }
+                if ($reason !== 8) {
+                    $cert['reason'] = $reason;
+                    yield $cert;
+                }
             }
         }
     }
