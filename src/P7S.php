@@ -74,14 +74,15 @@ class P7S
             }
             foreach (($v['unsigned'] ?? []) as $a) {
                 if ($a['type'] === "1.2.840.113549.1.9.16.2.14") {
+                    $timestamp = Decoder::fromString(
+                        Decoder::fromString($a['data'][0])->values()[0][1][0][2][1][0]
+                    )->map(TimestampResponse::mapToken());
                     $signers[$k]['timestamp'] = [
-                        'data' => Decoder::fromString(
-                                Decoder::fromString($a['data'][0])->values()[0][1][0][2][1][0]
-                            )->map(TimestampResponse::mapToken()),
-                        'stamped' => $signers[$k]['timestamp']['genTime'],
-                        'valid' => base64_decode($signers[$k]['timestamp']['messageImprint']['hashedMessage']) === hash(
+                        'data' => $timestamp,
+                        'stamped' => $timestamp['genTime'],
+                        'valid' => base64_decode($timestamp['messageImprint']['hashedMessage']) === hash(
                                 ASN1::OIDtoText(
-                                    $signers[$k]['timestamp']['messageImprint']['hashAlgorithm']['algorithm']
+                                    $timestamp['messageImprint']['hashAlgorithm']['algorithm']
                                 ),
                                 base64_decode($v['signature']),
                                 true
