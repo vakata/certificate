@@ -209,7 +209,10 @@ class P7S
         foreach (preg_split("(\r|\n)", $pdf) as $row) {
             if (str_replace("\r", '', trim($row)) === 'endobj') {
                 $append = false;
-                if (isset($matches[$current]) && strpos($matches[$current], 'pkcs7.detached') === false) {
+                if (isset($matches[$current]) &&
+                    strpos($matches[$current], 'pkcs7.detached') === false &&
+                    strpos($matches[$current], 'CAdES.detached') === false
+                ) {
                     $matches[$current] = '';
                 }
                 continue;
@@ -225,12 +228,12 @@ class P7S
             }
         }
         foreach ($matches as $obj) {
-            if (strpos($obj, 'pkcs7.detached') !== false) {
+            if (strpos($obj, 'pkcs7.detached') !== false || strpos($obj, 'CAdES.detached') !== false) {
                 $ranges = explode(' ', trim(explode(']', (explode('[', $obj, 2)[1] ?? ''), 2)[0]));
                 if (isset($ranges[0]) && isset($ranges[1]) && isset($ranges[2]) && isset($ranges[3])) {
                     $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
                     $signed = null;
-                    if (preg_match("(/M\(D:([\d+\-']+)\))", $obj, $matches)) {
+                    if (preg_match("(/M\s*\(D:([\d+\-'Z]+)\))", $obj, $matches)) {
                         $signed = strtotime(str_replace("'", '', $matches[1]));
                     }
                     $signature = hex2bin(explode('>', explode('/Contents<', str_replace(["\r","\n","\t", " "], '', $obj), 2)[1], 2)[0]);
