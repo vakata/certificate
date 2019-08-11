@@ -124,32 +124,6 @@ class Certificate
     }
 
     /**
-     * Validate a signature
-     *
-     * @param string $subject the message
-     * @param string $signature the signature
-     * @param string $public the public key used to sign the message
-     * @param string $algorithm the algorithm used to sign the message
-     * @return bool is the signature valid
-     */
-    protected function validateSignature($subject, $signature, $public, $algorithm) : bool
-    {
-        if (!is_callable('\openssl_verify')) {
-            throw new CertificateException('OpenSSL not found');
-        }
-        $algorithm = ASN1::OIDtoText($algorithm);
-        if (!in_array($algorithm, openssl_get_md_methods(true))) {
-            throw new CertificateException('Unsupported algorithm');
-        }
-        return \openssl_verify(
-            $subject,
-            $signature,
-            $public,
-            $algorithm
-        ) === 1;
-    }
-
-    /**
      * Parse the certificate
      *
      * @param string $cert the certificate to parse
@@ -938,7 +912,7 @@ class Certificate
                                 }
                             }
                             $validateAgainst = $certs[0] ?? $this->caCertificate ?? $this;
-                            if (!$this->validateSignature(
+                            if (!Signature::verify(
                                 $ocspData->subject(),
                                 substr($ocspResponse['responseBytes']['response']['signature'], 1),
                                 $validateAgainst->getPublicKey(),
@@ -1025,7 +999,7 @@ class Certificate
     public function isSignatureValid() : bool
     {
         if ($this->isSelfSigned()) {
-            return $this->validateSignature(
+            return Signature::verify(
                 $this->sign['subject'],
                 substr($this->sign['signature'], 1),
                 $this->getPublicKey(),
@@ -1035,7 +1009,7 @@ class Certificate
         if (!$this->caCertificate) {
             throw new CertificateException("Cannot validate signature without CA");
         }
-        return $this->validateSignature(
+        return Signature::verify(
             $this->sign['subject'],
             substr($this->sign['signature'], 1),
             $this->caCertificate->getPublicKey(),

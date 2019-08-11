@@ -72,28 +72,12 @@ class CRL
         $signed = $lazy->rawData()['tbsCertList'];
         $signatureValue = $lazy['signatureValue'];
         $signatureAlgorithm = $lazy['signatureAlgorithm']['algorithm'];
-        return $this->validateSignature(
+        return Signature::verify(
             $this->data->getReader()->chunk($signed['start'], $signed['length']),
             substr($signatureValue, 1),
             $found->getPublicKey(),
             $signatureAlgorithm
         );
-    }
-    protected function validateSignature($subject, $signature, $public, $algorithm) : bool
-    {
-        if (!is_callable('\openssl_verify')) {
-            throw new CertificateException('OpenSSL not found');
-        }
-        $algorithm = ASN1::OIDtoText($algorithm);
-        if (!in_array($algorithm, openssl_get_md_methods(true))) {
-            throw new CertificateException('Unsupported algorithm');
-        }
-        return \openssl_verify(
-            $subject,
-            $signature,
-            $public,
-            $algorithm
-        ) === 1;
     }
     public function revoked(bool $extensions = false)
     {

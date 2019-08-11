@@ -151,36 +151,12 @@ class P7S
                 $signers[$k]['hash'] = $dHash;
             }
             if ($signers[$k]['certificate']) {
-                $temp = null;
-                if (openssl_public_decrypt(
+                $signers[$k]['valid'] = $dHash === $signers[$k]['hash'] && Signature::verify(
+                    $signed,
                     base64_decode($v['signature']),
-                    $temp,
-                    Certificate::fromString($signers[$k]['certificate'])->getPublicKey()
-                )) {
-                    $hash = bin2hex(Decoder::fromString($temp)->values()[0][1]);
-                    $signers[$k]['valid'] = $dHash === $signers[$k]['hash'] && $sHash = $hash;
-                }
-                
-                // $signers[$k]['valid'] = $hash === $signers[$k]['hash'] && static::validateSignature(
-                //     $signed,
-                //     base64_decode($v['signature']),
-                //     $signers[$k]['certificate']->getPublicKey(),
-                //     $signers[$k]['algorithm']
-                // );
-
-                // if (!is_callable('\openssl_verify')) {
-                //     throw new CertificateException('OpenSSL not found');
-                // }
-                // $algorithm = ASN1::OIDtoText($algorithm);
-                // if (!in_array($algorithm, openssl_get_md_methods(true))) {
-                //     throw new CertificateException('Unsupported algorithm');
-                // }
-                // return \openssl_verify(
-                //     $subject,
-                //     $signature,
-                //     $public,
-                //     $algorithm
-                // ) === 1;
+                    Certificate::fromString($signers[$k]['certificate'])->getPublicKey(),
+                    $signers[$k]['algorithm']
+                );
             }
         }
         return $signers;
