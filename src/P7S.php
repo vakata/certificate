@@ -42,10 +42,21 @@ class P7S
             $raw = Parser::map();
             $raw['children']['data']['children']['certificates']['repeat'] = [ 'tag' => ASN1::TYPE_ANY_DER ];
             $raw['children']['data']['children']['signerInfos']['repeat']['children']['signed']['tag'] = ASN1::TYPE_ANY_DER;
-            $this->raw  = Decoder::fromString($data)->map($raw);
+            $this->raw = Decoder::fromString($data)->map($raw);
         } catch (\vakata\asn1\ASN1Exception $e) {
             throw new CertificateException('Invalid signature');
         }
+    }
+    public function hasData(): bool
+    {
+        $temp = $this->p7s->toArray()['data']['content'];
+        return isset($temp['data']) && $temp['type'] === '1.2.840.113549.1.7.1' && strlen($temp['data']);
+    }
+    public function getData(): string
+    {
+        return $this->hasData() ?
+            Decoder::fromString($this->p7s->toArray()['data']['content']['data'])->values()[0] :
+            '';
     }
     /**
      * Get all signers from the signature.
@@ -129,8 +140,11 @@ class P7S
      * @param string $data the signed content itself
      * @return array an array of signers with their signature validation status
      */
-    public function validateData(string $data) : array
+    public function validateData(string $data = null) : array
     {
+        if ($data === null && $this->hasData()) {
+            $data = $this->getData();
+        }
         return $this->validate($data, false);
     }
     protected function validate(string $data, bool $hashOnly = false) : array
