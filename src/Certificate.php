@@ -216,6 +216,9 @@ class Certificate
     protected function parseNaturalPerson(array $cert)
     {
         $natural = $cert['subject'][ASN1::TextToOID('serialNumber')] ?? null;
+        if (is_array($natural)) {
+            $natural = array_values($natural)[0];
+        }
         $temp = [];
         if (isset($natural) &&
             preg_match('((PAS|IDC|PNO|TAX|TIN|[A-Z]{2}\:)([A-Z]{2})\-(.*))i', $natural, $temp)
