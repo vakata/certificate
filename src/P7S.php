@@ -186,6 +186,66 @@ class P7S
         return static::validatePDF(file_get_contents($path));
     }
     /**
+     * Get all signers from an XML file
+     * @param  string   $path the path to the XML file
+     * @return array    all signers and their status
+     */
+    public static function validateXMLFile(string $path) : array
+    {
+        return static::validateXML(file_get_contents($path));
+    }
+    /**
+     * Get all signers from an XML file
+     * @param  string   $xmlContent the XML string
+     * @return array    all signers and their status
+     */
+    public static function validateXML(string $xmlContent) : array
+    {
+        $xml = new \DOMDocument();
+        $xml->preserveWhiteSpace = true;
+        $xml->formatOutput = false;
+        $xml->loadXML($xmlContent);
+
+        $signers = [];
+        foreach ($xml->getElementsByTagName('SignedInfo') as $k => $item) {
+            try {
+                $alg = $item->getElementsByTagName('SignatureMethod')->item(0)->getAttribute('Algorithm');
+                $alg = explode('#', $alg, 2)[1] ?? '';
+                $crt = $item->parentNode->getElementsByTagName('X509Certificate')->item(0)->nodeValue;
+                $crt = Certificate::fromString(base64_decode($crt));
+                $pub = $crt->getPublicKey();
+                $sig = base64_decode($item->parentNode->getElementsByTagName('SignatureValue')->item(0)->nodeValue);
+                $c14 = $item->getElementsByTagName('CanonicalizationMethod')->item(0)->getAttribute('Algorithm');
+                $dat = $item->C14N(strpos($c14, '-exc-') !== false, strpos($c14, 'WithComments') !== false);
+
+                // assume enveloped signature
+                $dlg = $item->getElementsByTagName('DigestMethod')->item(0)->getAttribute('Algorithm');
+                $dlg = explode('#', $dlg, 2)[1] ?? '';
+                $dig = $item->getElementsByTagName('DigestValue')->item(0)->nodeValue;
+                $tmp = new \DOMDocument();
+                $tmp->preserveWhiteSpace = true;
+                $tmp->formatOutput = false;
+                $tmp->loadXML($xmlContent);
+                $sik = $tmp->getElementsByTagName('Signature')->item($k);
+                $sik->parentNode->removeChild($sik);
+                $tmp = $tmp->C14N(strpos($c14, '-exc-') !== false, strpos($c14, 'WithComments') !== false);
+                $tmp = base64_encode(hash($dlg, $tmp, true));
+                $dig = preg_replace('(\s+)', '', $dig);
+            } catch (\Throwable $e) { continue; }
+
+            $signers[] = [
+                'hash'        => $dig,
+                'algorithm'   => $alg,
+                'signed'      => null,
+                'timestamp'   => null,
+                'subject'     => $crt->getSubjectData(),
+                'certificate' => $crt->toString(),
+                'valid'       => $dig === $tmp && Signature::verify($dat, $sig, $pub, $alg)
+            ];
+        }
+        return $signers;
+    }
+    /**
      * Get all signers from PDF data
      * @param  string   $pdf the pdf data
      * @return array    all signers and their status
