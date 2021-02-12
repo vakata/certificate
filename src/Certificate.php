@@ -687,7 +687,11 @@ class Certificate
      */
     public function getSerialNumber() : string
     {
-        return $this->getData()['serialNumber'];
+        $num = ltrim($this->getData()['serialNumber'], '0');
+        if (strlen($num) % 2 === 1) {
+            $num = '0' . $num;
+        }
+        return strtoupper($num);
     }
 
     /**
