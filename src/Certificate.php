@@ -611,11 +611,19 @@ class Certificate
         $compacted = [];
         if (is_array($original)) {
             foreach ($original as $item) {
-                if (is_array($item) && count($item)) {
-                    if (count($item) === 1) {
-                        $item = $item[0];
+                if (is_string($item)) {
+                    if (filter_var($item, FILTER_VALIDATE_EMAIL)) {
+                        $compacted['emailAddress'] = $item;
                     }
-                    if (count($item) > 1) {
+                }
+                if (is_array($item) && count($item)) {
+                    while (is_array($item) && count($item) === 1) {
+                        $item = array_values($item)[0];
+                    }
+                    if (is_array($item) && count($item) > 1 && is_string($item[0])) {
+                        while (is_array($item[1]) && count($item[1]) === 1) {
+                            $item[1] = array_values($item[1])[0];
+                        }
                         $compacted[$item[0]] = $item[1];
                     }
                 }
