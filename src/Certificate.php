@@ -819,7 +819,10 @@ class Certificate
      */
     public function getKeyUsage() : array
     {
-        $kusage = $this->cert['extensions'][ASN1::TextToOID('keyUsage')];
+        $kusage = $this->cert['extensions'][ASN1::TextToOID('keyUsage')] ?? null;
+        if (!isset($kusage)) {
+            return [];
+        }
         $unused = ord($kusage[0]);
         $kusage = substr($kusage, 1);
         $temp = '';
