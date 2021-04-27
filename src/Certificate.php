@@ -710,8 +710,7 @@ class Certificate
     public function getPolicies() : array
     {
         $policies = [];
-        $temp = $this->cert['extensions'][ASN1::TextToOID('certificatePolicies')] ?? [];
-        foreach ($temp as $policy) {
+        foreach (($this->cert['extensions'][ASN1::TextToOID('certificatePolicies')] ?? []) as $policy) {
             $policies[] = $policy[0];
         }
         return $policies;
@@ -742,17 +741,13 @@ class Certificate
      */
     public function getQcStatements() : array
     {
-        $policies = [];
-        foreach (
-            new \RecursiveIteratorIterator(
-                new \RecursiveArrayIterator($this->cert['extensions'][ASN1::TextToOID('qcStatements')] ?? [])
-            ) as $v
-        ) {
-            if (preg_match('(^(\d+\.?)+$)', $v)) {
-                $policies[] = $v;
+        $statements = [];
+        foreach (($this->cert['extensions'][ASN1::TextToOID('qcStatements')] ?? []) as $statement) {
+            if (preg_match('(^(\d+\.?)+$)', $statement[0])) {
+                $statements[] = $statement[0];
             }
         }
-        return $policies;
+        return $statements;
     }
     /**
      * Get all certificate policy OIDs related to the CA's Certification Practice Statement as an array of strings
@@ -775,7 +770,30 @@ class Certificate
         }
         return $policies;
     }
-
+    /**
+     * Check if the certificate is stored on a secure signature creation device.
+     *
+     * @return boolean
+     */
+    public function onSecureDevice() : bool
+    {
+        return in_array('0.4.0.1862.1.4', $this->getQcStatements());
+    }
+    /**
+     * Check if the certificate can be a Qualified Certificate (CAs are not checked)
+     *
+     * @return boolean
+     */
+    public function isEIDAS() : bool
+    {
+        $statements = $this->getQcStatements();
+        $policies = $this->getPolicies();
+        return (
+                in_array('0.4.0.1862.1.1', $statements) ||
+                in_array('0.4.0.1456.1.1', $policies) ||
+                in_array('0.4.0.1456.1.2', $policies)
+            );
+    }
     /**
      * Get the subject key identifier (if available)
      *
@@ -793,6 +811,52 @@ class Certificate
     public function getAuthorityKeyIdentifier()
     {
         return $this->cert['extensions'][ASN1::TextToOID('authorityKeyIdentifier')] ?? null;
+    }
+    /**
+     * Get the key usages
+     *
+     * @return array
+     */
+    public function getKeyUsage() : array
+    {
+        $kusage = $this->cert['extensions'][ASN1::TextToOID('keyUsage')];
+        $unused = ord($kusage[0]);
+        $kusage = substr($kusage, 1);
+        $temp = '';
+        foreach (str_split($kusage) as $char) {
+            $temp .= base_convert(ord($char), 10, 2);
+        }
+        $temp = substr($temp, 0, -1 * $unused);
+        $usages = [];
+        foreach ([
+            'digitalSignature',
+            'nonRepudiation',
+            'keyEncipherment',
+            'dataEncipherment',
+            'keyAgreement',
+            'keyCertSign',
+            'cRLSign',
+            'encipherOnly',
+            'decipherOnly'
+        ] as $bit => $usage) {
+            if (isset($temp[$bit]) && $temp[$bit] === '1') {
+                $usages[] = $usage;
+            }
+        }
+        return $usages;
+    }
+    /**
+     * Get the extended key usages
+     *
+     * @return array
+     */
+    public function getExtendedKeyUsage() : array
+    {
+        $usages = [];
+        foreach (($this->cert['extensions'][ASN1::TextToOID('extKeyUsage')] ?? []) as $usage) {
+            $usages[$usage] = ASN1::OIDtoText($usage);
+        }
+        return $usages;
     }
     /**
      * Get the CRL points
@@ -894,7 +958,7 @@ class Certificate
             );
             $ocspRequest = OCSPRequest::generate('sha1', $nameHash, $keyHash, $this->getSerialNumber());
             foreach ($ocsp as $url) {
-                $response = @file_get_contents($url, null, stream_context_create([
+                $response = @file_get_contents($url, false, stream_context_create([
                     'http' => [
                         'method' => "POST",
                         'header' => "".
