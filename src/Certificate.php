@@ -777,7 +777,7 @@ class Certificate
      */
     public function onSecureDevice() : bool
     {
-        return in_array('0.4.0.1862.1.4', $this->getQcStatements());
+        return in_array('0.4.0.1862.1.4', $this->getQcStatements()) || in_array('0.4.0.1456.1.1', $this->getPolicies());
     }
     /**
      * Check if the certificate can be a Qualified Certificate (CAs are not checked)
