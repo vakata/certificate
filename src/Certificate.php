@@ -56,8 +56,9 @@ class Certificate
      */
     public function __construct(string $cert)
     {
-        if (strpos($cert, '-BEGIN CERTIFICATE-') !== false) {
-            $cert = str_replace(['-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----', "\r", "\n"], '', $cert);
+        if (substr($cert, 0, 10) === '-----BEGIN') {
+            $cert = preg_replace('(-----(BEGIN|END).*?-----)', '', $cert);
+            $cert = str_replace(["\r", "\n"], '', $cert);
             $cert = base64_decode($cert);
         }
         $this->data          = $cert;

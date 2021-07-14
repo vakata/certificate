@@ -37,6 +37,11 @@ class P7S
      */
     public function __construct(string $data)
     {
+        if (substr($data, 0, 10) === '-----BEGIN') {
+            $data = preg_replace('(-----(BEGIN|END).*?-----)', '', $data);
+            $data = str_replace(["\r", "\n"], '', $data);
+            $data = base64_decode($data);
+        }
         try {
             $this->p7s = Parser::fromString($data);
             $raw = Parser::map();
