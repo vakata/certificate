@@ -190,16 +190,16 @@ class P7S
      * @param  string   $path the path to the XML file
      * @return array    all signers and their status
      */
-    public static function validateXMLFile(string $path) : array
+    public static function validateXMLFile(string $path, ?Certificate $crt = null) : array
     {
-        return static::validateXML(file_get_contents($path));
+        return static::validateXML(file_get_contents($path), $crt);
     }
     /**
      * Get all signers from an XML file
      * @param  string   $xmlContent the XML string
      * @return array    all signers and their status
      */
-    public static function validateXML(string $xmlContent) : array
+    public static function validateXML(string $xmlContent, ?Certificate $crt = null) : array
     {
         $xml = new \DOMDocument();
         $xml->preserveWhiteSpace = true;
@@ -211,13 +211,14 @@ class P7S
             try {
                 $alg = $item->getElementsByTagName('SignatureMethod')->item(0)->getAttribute('Algorithm');
                 $alg = explode('#', $alg, 2)[1] ?? '';
-                $crt = $item->parentNode->getElementsByTagName('X509Certificate')->item(0)->nodeValue;
-                $crt = Certificate::fromString(base64_decode($crt));
+                if (!isset($crt)) {
+                    $crt = $item->parentNode->getElementsByTagName('X509Certificate')->item(0)->nodeValue;
+                    $crt = Certificate::fromString(base64_decode($crt));
+                }
                 $pub = $crt->getPublicKey();
                 $sig = base64_decode($item->parentNode->getElementsByTagName('SignatureValue')->item(0)->nodeValue);
                 $c14 = $item->getElementsByTagName('CanonicalizationMethod')->item(0)->getAttribute('Algorithm');
-                $dat = $item->C14N(strpos($c14, '-exc-') !== false, strpos($c14, 'WithComments') !== false);
-
+                $dat = $item->C14N(true, strpos($c14, 'WithComments') !== false);
                 // assume enveloped signature
                 $dlg = $item->getElementsByTagName('DigestMethod')->item(0)->getAttribute('Algorithm');
                 $dlg = explode('#', $dlg, 2)[1] ?? '';
@@ -228,13 +229,20 @@ class P7S
                 $tmp->loadXML($xmlContent);
                 $sik = $tmp->getElementsByTagName('Signature')->item($k);
                 $sik->parentNode->removeChild($sik);
-                $tmp = $tmp->C14N(strpos($c14, '-exc-') !== false, strpos($c14, 'WithComments') !== false);
+                $ns = [];
+                foreach ($item->getElementsByTagName('InclusiveNamespaces') as $in) {
+                    foreach (explode(' ', $in->getAttribute('PrefixList')) as $n) {
+                        $ns[] = $n;
+                    }
+                }
+                $tmp = $tmp->C14N(true, strpos($c14, 'WithComments') !== false, null, $ns);
                 $tmp = base64_encode(hash($dlg, $tmp, true));
                 $dig = preg_replace('(\s+)', '', $dig);
             } catch (\Throwable $e) { continue; }
 
             $signers[] = [
                 'hash'        => $dig,
+                'temp'        => $tmp,
                 'algorithm'   => $alg,
                 'signed'      => null,
                 'timestamp'   => null,
