@@ -36,7 +36,7 @@ abstract class Signature
         }
         if (($mode & static::VERIFY_MODE) && is_callable('\openssl_verify')) {
             try {
-                if (!in_array($algorithm, openssl_get_md_methods(true))) {
+                if (!in_array(strtoupper($algorithm), openssl_get_md_methods(true))) {
                     throw new CertificateException('Unsupported algorithm');
                 }
                 if (openssl_verify($data, $signature, $publicKey, $algorithm) === 1) {
