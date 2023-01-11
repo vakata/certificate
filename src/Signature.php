@@ -36,10 +36,17 @@ abstract class Signature
         }
         if (($mode & static::VERIFY_MODE) && is_callable('\openssl_verify')) {
             try {
-                if (!in_array(strtoupper($algorithm), openssl_get_md_methods(true))) {
+                $found = null;
+                foreach (openssl_get_md_methods(true) as $a) {
+                    if (strtolower($a) === strtolower($algorithm)) {
+                        $found = $a;
+                        break;
+                    }
+                }
+                if (!isset($found)) {
                     throw new CertificateException('Unsupported algorithm');
                 }
-                if (openssl_verify($data, $signature, $publicKey, $algorithm) === 1) {
+                if (openssl_verify($data, $signature, $publicKey, $found) === 1) {
                     return true;
                 }
             } catch (\Throwable $ignore) {
