@@ -36,18 +36,19 @@ abstract class Signature
         }
         if (($mode & static::VERIFY_MODE) && is_callable('\openssl_verify')) {
             try {
-                $found = null;
+                $found = [];
                 foreach (openssl_get_md_methods(true) as $a) {
                     if (strtolower($a) === strtolower($algorithm)) {
-                        $found = $a;
-                        break;
+                        $found[] = $a;
                     }
                 }
-                if (!isset($found)) {
-                    throw new CertificateException('Unsupported algorithm');
+                if (!count($found)) {
+                    $found = openssl_get_md_methods(true);
                 }
-                if (openssl_verify($data, $signature, $publicKey, $found) === 1) {
-                    return true;
+                foreach ($found as $a) {
+                    if (openssl_verify($data, $signature, $publicKey, $a) === 1) {
+                        return true;
+                    }
                 }
             } catch (\Throwable $ignore) {
                 // no need to catch
@@ -55,19 +56,23 @@ abstract class Signature
         }
         if (($mode & static::DECRYPT_MODE) && is_callable('\openssl_public_decrypt')) {
             try {
-                $digest = $algorithm;
                 $temp = null;
-                if (preg_match('((md|sha)-?(\d+))i', strtolower($digest), $temp)) {
-                    $digest = $temp[0];
+                $found = [];
+                if (preg_match('((md|sha)-?(\d+))i', strtolower($algorithm), $temp)) {
+                    $found[] = $temp[0];
                 }
-                if (!in_array($digest, hash_algos())) {
-                    throw new CertificateException('Unsupported digest algorithm');
+                if (!count($found)) {
+                    $found = hash_algos();
                 }
-                $temp = null;
-                if (openssl_public_decrypt($signature, $temp, $publicKey)) {
-                    $hash = bin2hex(Decoder::fromString($temp)->values()[0][1]);
-                    if (strtolower($hash) === strtolower(hash($digest, $data, false))) {
-                        return true;
+                foreach ([OPENSSL_PKCS1_PADDING, OPENSSL_NO_PADDING] as $p) {
+                    $temp = null;
+                    if (openssl_public_decrypt($signature, $temp, $publicKey, $p)) {
+                        $hash = bin2hex(Decoder::fromString($temp)->values()[0][1]);
+                        foreach ($found as $h) {
+                            if (strtolower($hash) === strtolower(hash($h, $data, false))) {
+                                return true;
+                            }
+                        }
                     }
                 }
             } catch (\Throwable $ignore) {
