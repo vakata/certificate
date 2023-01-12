@@ -43,7 +43,7 @@ abstract class Signature
                     }
                 }
                 if (!count($found)) {
-                    $found = openssl_get_md_methods(true);
+                    $found = openssl_get_md_methods();
                 }
                 foreach ($found as $a) {
                     if (openssl_verify($data, $signature, $publicKey, $a) === 1) {
