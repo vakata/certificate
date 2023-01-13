@@ -64,7 +64,7 @@ abstract class Signature
                 if (!count($found)) {
                     $found = hash_algos();
                 }
-                foreach ([OPENSSL_PKCS1_PADDING, OPENSSL_NO_PADDING] as $p) {
+                foreach ([OPENSSL_PKCS1_PADDING, OPENSSL_NO_PADDING, OPENSSL_PKCS1_OAEP_PADDING] as $p) {
                     $temp = null;
                     if (openssl_public_decrypt($signature, $temp, $publicKey, $p)) {
                         $hash = bin2hex(Decoder::fromString($temp)->values()[0][1]);
