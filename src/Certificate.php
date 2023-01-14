@@ -649,7 +649,14 @@ class Certificate
         }
         return $result;
     }
-    
+    public function isRSA(): bool
+    {
+        return !$this->isEC();
+    }
+    public function isEC(): bool
+    {
+        return $this->cert['SubjectPublicKeyInfo']['algorithm']['algorithm'] = '1.2.840.10045.2.1';
+    }
     /**
      * Get the public key from the certificate
      *

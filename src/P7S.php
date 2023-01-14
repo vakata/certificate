@@ -223,7 +223,8 @@ class P7S
                 $pub = $crt->getPublicKey();
                 $sig = base64_decode($item->parentNode->getElementsByTagName('SignatureValue')->item(0)->nodeValue);
                 $c14 = $item->getElementsByTagName('CanonicalizationMethod')->item(0)->getAttribute('Algorithm');
-                $dat = $item->C14N(true, strpos($c14, 'WithComments') !== false);
+                $dat1 = $item->C14N(true, strpos($c14, 'WithComments') !== false);
+                $dat2 = $item->C14N(false, strpos($c14, 'WithComments') !== false);
                 // assume enveloped signature
                 $dlg = $item->getElementsByTagName('DigestMethod')->item(0)->getAttribute('Algorithm');
                 $dlg = explode('#', $dlg, 2)[1] ?? '';
@@ -240,10 +241,33 @@ class P7S
                         $ns[] = $n;
                     }
                 }
-                $tmp = $tmp->C14N(true, strpos($c14, 'WithComments') !== false, null, $ns);
-                $tmp = base64_encode(hash($dlg, $tmp, true));
+                $tmp1 = $tmp->C14N(true, strpos($c14, 'WithComments') !== false, null, $ns);
+                $tmp1 = base64_encode(hash($dlg, $tmp1, true));
+                $tmp2 = $tmp->C14N(false, strpos($c14, 'WithComments') !== false, null, $ns);
+                $tmp2 = base64_encode(hash($dlg, $tmp2, true));
                 $dig = preg_replace('(\s+)', '', $dig);
+                $tmp = $dig === $tmp2 ? $tmp2 : $tmp1;
             } catch (\Throwable $e) { continue; }
+
+            if ($crt->isEC()) {
+                $map = [
+                    'tag' => ASN1::TYPE_SEQUENCE,
+                    'children' => [
+                        'i1' => [
+                            'tag' => ASN1::TYPE_INTEGER,
+                            'raw' => true
+                        ],
+                        'i2' => [
+                            'tag' => ASN1::TYPE_INTEGER,
+                            'raw' => true
+                        ]
+                    ]
+                ];
+                $sig = Encoder::encode([
+                    'i1' => substr($sig, 0, strlen($sig) / 2),
+                    'i2' => substr($sig, strlen($sig) / 2),
+                ], $map);
+            }
 
             $signers[] = [
                 'hash'        => $dig,
@@ -253,7 +277,8 @@ class P7S
                 'timestamp'   => null,
                 'subject'     => $crt->getSubjectData(),
                 'certificate' => $crt->toString(),
-                'valid'       => $dig === $tmp && Signature::verify($dat, $sig, $pub, $alg)
+                'valid'       => $dig === $tmp && 
+                    (Signature::verify($dat1, $sig, $pub, $alg) || Signature::verify($dat2, $sig, $pub, $alg))
             ];
         }
         return $signers;
