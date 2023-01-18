@@ -655,7 +655,7 @@ class Certificate
     }
     public function isEC(): bool
     {
-        return $this->cert['SubjectPublicKeyInfo']['algorithm']['algorithm'] = '1.2.840.10045.2.1';
+        return $this->cert['SubjectPublicKeyInfo']['algorithm']['algorithm'] === '1.2.840.10045.2.1';
     }
     /**
      * Get the public key from the certificate
