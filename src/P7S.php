@@ -317,7 +317,7 @@ class P7S
         }
         foreach ($matches as $obj) {
             if (strpos($obj, 'pkcs7.detached') !== false || strpos($obj, 'CAdES.detached') !== false) {
-                $ranges = explode(' ', trim(explode(']', (explode('[', $obj, 2)[1] ?? ''), 2)[0]));
+                $ranges = explode(' ', trim(explode(']', (explode('[', (explode('ByteRange', $obj, 2)[1] ?? ''), 2)[1] ?? ''), 2)[0]));
                 if (isset($ranges[0]) && isset($ranges[1]) && isset($ranges[2]) && isset($ranges[3])) {
                     $content = substr($pdf, $ranges[0], $ranges[1]) . substr($pdf, $ranges[2], $ranges[3]);
                     $signed = null;
