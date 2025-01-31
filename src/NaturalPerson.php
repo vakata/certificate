@@ -8,7 +8,7 @@ class NaturalPerson extends Person
     protected $mail;
     protected $data;
 
-    public function __construct(string $name, string $idProvider, string $id, string $country = null, string $mail = null, array $data = [])
+    public function __construct(string $name, string $idProvider, string $id, ?string $country = null, ?string $mail = null, array $data = [])
     {
         parent::__construct($idProvider, $id, $country);
         $this->name = $name;

@@ -20,9 +20,7 @@
         "vakata/asn1" : "^2.1.0"
     },
     "require-dev": {
-        "phpunit/phpunit" : "4.*",
-        "codeclimate/php-test-reporter": "dev-master",
-        "clean/phpdoc-md": "dev-master"
+        "phpunit/phpunit" : "4.*"
     },
     "autoload": {
         "psr-4": {

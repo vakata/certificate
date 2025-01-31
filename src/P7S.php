@@ -145,7 +145,7 @@ class P7S
      * @param string $data the signed content itself
      * @return array an array of signers with their signature validation status
      */
-    public function validateData(string $data = null) : array
+    public function validateData(?string $data = null) : array
     {
         if ($data === null && $this->hasData()) {
             $data = $this->getData();

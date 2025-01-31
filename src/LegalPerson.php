@@ -6,7 +6,7 @@ class LegalPerson extends Person
 {
     protected $name;
 
-    public function __construct(string $name, string $idProvider, string $id, string $country = null)
+    public function __construct(string $name, string $idProvider, string $id, ?string $country = null)
     {
         parent::__construct($idProvider, $id, $country);
         $this->name = $name;

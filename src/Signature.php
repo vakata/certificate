@@ -26,7 +26,7 @@ abstract class Signature
         string $signature,
         string $publicKey,
         string $algorithm,
-        int $mode = null
+        ?int $mode = null
     ) {
         if ($mode === null) {
             $mode = static::$mode;

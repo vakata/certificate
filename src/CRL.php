@@ -105,7 +105,7 @@ class CRL
             }
         }
     }
-    public function isRevoked(string $cert, int $time = null)
+    public function isRevoked(string $cert, ?int $time = null)
     {
         $time = $time ?? time();
         foreach ($this->revoked() as $c) {

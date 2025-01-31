@@ -8,7 +8,7 @@ abstract class Person
     protected $country;
     protected $id;
     
-    public function __construct(string $idProvider, string $id, string $country = null)
+    public function __construct(string $idProvider, string $id, ?string $country = null)
     {
         $this->idProvider = $idProvider;
         $this->country = $country;

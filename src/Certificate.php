@@ -913,7 +913,7 @@ class Certificate
      * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isExpired(int $time = null) : bool
+    public function isExpired(?int $time = null) : bool
     {
         if ($time === null) {
             $time = time();
@@ -1032,7 +1032,7 @@ class Certificate
      * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isRevokedCRL(array $ca = [], int $time = null) : bool
+    public function isRevokedCRL(array $ca = [], ?int $time = null) : bool
     {
         if ($time === null) {
             $time = time();
@@ -1075,7 +1075,7 @@ class Certificate
      * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isRevoked(array $ca = [], int $time = null) : bool
+    public function isRevoked(array $ca = [], ?int $time = null) : bool
     {
         return ($time === null && $this->caCertificate !== null && $this->isRevokedOCSP()) ||
             $this->isRevokedCRL($ca, $time);
@@ -1124,7 +1124,7 @@ class Certificate
      * @param int $time optional timestamp representing a point in time to check against
      * @return bool
      */
-    public function isValid(array $ca = [], bool $chain = false, int $time = null) : bool
+    public function isValid(array $ca = [], bool $chain = false, ?int $time = null) : bool
     {
         return !$this->isExpired($time) &&
             ((!$this->caCertificate && !$this->isSelfSigned()) || $this->isSignatureValid()) &&
